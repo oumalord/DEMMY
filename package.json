@@ -1,0 +1,21 @@
+{
+  "name": "rentflow",
+  "version": "1.0.0",
+  "private": true,
+  "description": "RentFlow full-stack rent management system for owners, managers, tenants, and platform admins.",
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "dev": "npm-run-all --parallel dev:api dev:web",
+    "dev:web": "npm --workspace frontend run dev",
+    "dev:api": "npm --workspace backend run dev",
+    "build": "npm --workspace frontend run build && npm --workspace backend run build",
+    "lint": "npm --workspace frontend run lint && npm --workspace backend run lint"
+  },
+  "devDependencies": {
+    "npm-run-all": "^4.1.5",
+    "typescript": "^5.6.3"
+  }
+}

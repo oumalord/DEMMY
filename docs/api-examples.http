@@ -1,0 +1,38 @@
+### Login
+POST http://localhost:4000/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "owner@rentflow.app",
+  "password": "RentFlow@2026",
+  "device": "Chrome on Windows"
+}
+
+### Dashboard
+GET http://localhost:4000/api/dashboard
+Authorization: Bearer {{accessToken}}
+
+### Create M-Pesa payment
+POST http://localhost:4000/api/payments
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "unitId": "unit_a12",
+  "tenantId": "usr_tenant_1",
+  "amount": 840,
+  "method": "mpesa"
+}
+
+### Submit maintenance request
+POST http://localhost:4000/api/maintenance
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "propertyId": "prop_westlands",
+  "unitId": "unit_a12",
+  "title": "Kitchen sink leak",
+  "priority": "high",
+  "mediaUrls": ["/uploads/sink-leak.jpg"]
+}
