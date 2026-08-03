@@ -22,6 +22,7 @@ import {
   Smartphone,
   Sparkles,
   Sun,
+  User,
   UserCog,
   Users,
   Wrench
@@ -50,23 +51,35 @@ type Currency = "USD" | "KES";
 
 const roles: Role[] = ["Tenant", "Management", "Owner", "Super Admin"];
 
+const tabIcons: Record<Tab, typeof Home> = {
+  Overview: Home,
+  Properties: Building2,
+  Payments: CreditCard,
+  Maintenance: Wrench,
+  Messaging: MessageSquare,
+  Reports: FileText,
+  Security: ShieldCheck,
+  Admin: UserCog,
+  Profile: User
+};
+
 const navItems: Array<[typeof Home, Tab]> = [
-  [Home, "Overview"],
-  [Building2, "Properties"],
-  [CreditCard, "Payments"],
-  [Wrench, "Maintenance"],
-  [MessageSquare, "Messaging"],
-  [FileText, "Reports"],
-  [ShieldCheck, "Security"],
-  [UserCog, "Admin"],
-  [UserCog, "Profile"]
+  [tabIcons.Overview, "Overview"],
+  [tabIcons.Properties, "Properties"],
+  [tabIcons.Payments, "Payments"],
+  [tabIcons.Maintenance, "Maintenance"],
+  [tabIcons.Messaging, "Messaging"],
+  [tabIcons.Reports, "Reports"],
+  [tabIcons.Security, "Security"],
+  [tabIcons.Admin, "Admin"],
+  [tabIcons.Profile, "Profile"]
 ];
 
 const roleTabs: Record<Role, Tab[]> = {
   Tenant: ["Overview", "Payments", "Maintenance", "Messaging", "Reports", "Security", "Profile"],
   Management: ["Overview", "Properties", "Payments", "Maintenance", "Messaging", "Reports", "Security", "Profile"],
   Owner: ["Overview", "Properties", "Payments", "Maintenance", "Messaging", "Reports", "Security", "Admin", "Profile"],
-  "Super Admin": ["Overview", "Properties", "Payments", "Messaging", "Reports", "Security", "Admin", "Profile"]
+  "Super Admin": ["Overview", "Properties", "Payments", "Maintenance", "Messaging", "Reports", "Security", "Admin", "Profile"]
 };
 
 const rolePrivileges: Record<Role, string[]> = {
@@ -422,22 +435,11 @@ function PrivilegePanel({ role }: { role: Role }) {
 
 function DashboardShortcuts({ role, onNavigate }: { role: Role; onNavigate: (tab: Tab) => void }) {
   const shortcuts = roleTabs[role].filter((tab) => tab !== "Overview" && tab !== "Security");
-  const iconByTab: Record<Tab, typeof Home> = {
-    Overview: Home,
-    Properties: Building2,
-    Payments: CreditCard,
-    Maintenance: Wrench,
-    Messaging: MessageSquare,
-    Reports: FileText,
-    Security: ShieldCheck,
-    Admin: UserCog,
-    Profile: UserCog
-  };
 
   return (
     <section className="shortcut-grid">
       {shortcuts.map((tab) => {
-        const Icon = iconByTab[tab];
+        const Icon = tabIcons[tab];
         return (
           <button key={tab} onClick={() => onNavigate(tab)}>
             <Icon />
@@ -477,11 +479,22 @@ function DashboardSnapshot({ role }: { role: Role }) {
   );
 }
 
+type OverviewView = "dashboard" | "insights";
+
 function OverviewPage({ role, onNavigate, currency }: { role: Role; onNavigate: (tab: Tab) => void; currency: Currency }) {
+  const [view, setView] = useState<OverviewView>("dashboard");
   const stats = roleStats[role];
   const isTenant = role === "Tenant";
   return (
     <>
+      <div className="page-tabs" role="tablist" aria-label="Overview views">
+        <button role="tab" aria-selected={view === "dashboard"} className={view === "dashboard" ? "selected" : ""} onClick={() => setView("dashboard")}>Dashboard</button>
+        <button role="tab" aria-selected={view === "insights"} className={view === "insights" ? "selected" : ""} onClick={() => setView("insights")}>{isTenant ? "My unit" : "Portfolio"}</button>
+      </div>
+      {view === "insights" ? (
+        isTenant ? <TenantOverview currency={currency} /> : <PortfolioOverview role={role} />
+      ) : (
+        <>
       {!isTenant && (
         <section className="hero-band">
           <div>
@@ -512,6 +525,8 @@ function OverviewPage({ role, onNavigate, currency }: { role: Role; onNavigate: 
       </section>
       <DashboardSnapshot role={role} />
       <DashboardShortcuts role={role} onNavigate={onNavigate} />
+        </>
+      )}
     </>
   );
 }
@@ -609,6 +624,8 @@ function PropertiesPage({ role, currency }: { role: Role; currency: Currency }) 
 function PaymentsPage({ role, currency }: { role: Role; currency: Currency }) {
   const [paymentMode, setPaymentMode] = useState<"mpesa" | "bank" | "card">("bank");
   const [bankForm, setBankForm] = useState({ bankName: "", accountName: "", accountNumber: "", routingNumber: "" });
+  const [mpesaPhone, setMpesaPhone] = useState("");
+  const [cardForm, setCardForm] = useState({ number: "", expiry: "", cvc: "" });
   const [paymentStatus, setPaymentStatus] = useState("Ready to process rent payment.");
   const canPay = role === "Tenant";
 
@@ -618,6 +635,27 @@ function PaymentsPage({ role, currency }: { role: Role; currency: Currency }) {
       return;
     }
     setPaymentStatus(`Bank debit initiated from ${bankForm.bankName} account ending ${bankForm.accountNumber.slice(-4)}.`);
+  }
+
+  function processMpesaPayment() {
+    if (!mpesaPhone.trim()) {
+      setPaymentStatus("Enter an M-Pesa phone number first.");
+      return;
+    }
+    setPaymentStatus(`STK push sent to ${mpesaPhone.trim()}. Approve on your phone to complete payment.`);
+  }
+
+  function processCardPayment() {
+    if (!cardForm.number || !cardForm.expiry || !cardForm.cvc) {
+      setPaymentStatus("Enter card number, expiry, and CVC first.");
+      return;
+    }
+    setPaymentStatus(`Card payment authorized for ${formatMoney(2000, currency)}. Receipt will be ready shortly.`);
+  }
+
+  function selectPaymentMode(mode: "mpesa" | "bank" | "card") {
+    setPaymentMode(mode);
+    setPaymentStatus(`Switched to ${mode === "mpesa" ? "M-Pesa" : mode === "bank" ? "bank account" : "card"} payment.`);
   }
 
   return (
@@ -645,7 +683,7 @@ function PaymentsPage({ role, currency }: { role: Role; currency: Currency }) {
             ["bank", "Bank account"],
             ["card", "Card"]
           ].map(([mode, label]) => (
-            <button key={mode} className={paymentMode === mode ? "selected" : ""} onClick={() => setPaymentMode(mode as "mpesa" | "bank" | "card")}>
+            <button key={mode} className={paymentMode === mode ? "selected" : ""} onClick={() => selectPaymentMode(mode as "mpesa" | "bank" | "card")}>
               {label}
             </button>
           ))}
@@ -659,8 +697,22 @@ function PaymentsPage({ role, currency }: { role: Role; currency: Currency }) {
             <button className="primary-action" onClick={processBankPayment}>{canPay ? `Debit ${formatMoney(2000, currency)}` : "Save bank route"}</button>
           </div>
         )}
-        {paymentMode === "mpesa" && <div className="method-note"><Smartphone /> Enter phone number at checkout. STK push will be sent for approval.</div>}
-        {paymentMode === "card" && <div className="method-note"><CreditCard /> Card payment opens a secure card form and tokenizes the card.</div>}
+        {paymentMode === "mpesa" && (
+          <div className="bank-form">
+            <div className="method-note"><Smartphone /> Enter phone number at checkout. STK push will be sent for approval.</div>
+            <label>Phone number<input placeholder="+254700000101" value={mpesaPhone} onChange={(event) => setMpesaPhone(event.target.value)} /></label>
+            <button className="primary-action" onClick={processMpesaPayment}>{canPay ? `Pay ${formatMoney(2000, currency)} via M-Pesa` : "Save M-Pesa route"}</button>
+          </div>
+        )}
+        {paymentMode === "card" && (
+          <div className="bank-form">
+            <div className="method-note"><CreditCard /> Card payment opens a secure card form and tokenizes the card.</div>
+            <label>Card number<input placeholder="4111 1111 1111 1111" value={cardForm.number} onChange={(event) => setCardForm({ ...cardForm, number: event.target.value })} /></label>
+            <label>Expiry<input placeholder="MM/YY" value={cardForm.expiry} onChange={(event) => setCardForm({ ...cardForm, expiry: event.target.value })} /></label>
+            <label>CVC<input placeholder="123" value={cardForm.cvc} onChange={(event) => setCardForm({ ...cardForm, cvc: event.target.value })} /></label>
+            <button className="primary-action" onClick={processCardPayment}>{canPay ? `Pay ${formatMoney(2000, currency)} with card` : "Save card route"}</button>
+          </div>
+        )}
         <p className="status-note">{paymentStatus}</p>
       </article>
     </section>
@@ -706,21 +758,32 @@ function MaintenancePage({ role }: { role: Role }) {
 }
 
 function ReportsPage({ role, currency }: { role: Role; currency: Currency }) {
+  const [reportStatus, setReportStatus] = useState("");
   const reportItems = role === "Tenant"
     ? ["Receipts", "Lease agreement", "Utility history", "Maintenance history"]
     : ["Monthly financial report", "Tenant report", "Maintenance report", "Vacancy report"];
+
+  function downloadReport(item: string) {
+    setReportStatus(`Preparing ${item.toLowerCase()} export as PDF and Excel...`);
+  }
+
+  function downloadReceipt(receiptId: string) {
+    setReportStatus(`Downloading receipt ${receiptId}...`);
+  }
+
   return (
     <section className="content-grid">
       <article className="panel wide-panel">
-        <div className="panel-heading"><div><span>Download center</span><h3>{role} reports</h3></div><button>Export PDF</button></div>
-        <div className="report-grid">{reportItems.map((item) => <button key={item}><FileText />{item}<span>PDF / Excel</span></button>)}</div>
+        <div className="panel-heading"><div><span>Download center</span><h3>{role} reports</h3></div><button onClick={() => downloadReport("full report bundle")}>Export PDF</button></div>
+        <div className="report-grid">{reportItems.map((item) => <button key={item} onClick={() => downloadReport(item)}><FileText />{item}<span>PDF / Excel</span></button>)}</div>
+        {reportStatus && <p className="status-note">{reportStatus}</p>}
         {role === "Tenant" && (
           <div className="receipt-list">
             {receipts.map((receipt) => (
               <div className="receipt-row" key={receipt.id}>
                 <span><strong>{receipt.id}</strong><small>{receipt.date} - {receipt.method}</small></span>
                 <b>{convertMoneyText(receipt.amount, currency)}</b>
-                <button>Download receipt</button>
+                <button onClick={() => downloadReceipt(receipt.id)}>Download receipt</button>
               </div>
             ))}
           </div>
@@ -998,7 +1061,15 @@ function AppShell() {
           {navItems.map(([Icon, label]) => {
             const allowed = availableTabs.includes(label);
             return (
-              <button key={label} className={label === activeTab ? "active" : allowed ? "" : "locked"} onClick={() => switchTab(label)}>
+              <button
+                key={label}
+                type="button"
+                className={label === activeTab ? "active" : allowed ? "" : "locked"}
+                onClick={() => allowed && switchTab(label)}
+                disabled={!allowed}
+                aria-current={label === activeTab ? "page" : undefined}
+                aria-label={allowed ? label : `${label} (locked for ${role})`}
+              >
                 <Icon aria-hidden="true" />
                 <span>{label}</span>
               </button>
@@ -1026,14 +1097,21 @@ function AppShell() {
       </section>
 
       <nav className="mobile-bottom-nav" aria-label="Mobile navigation">
-        {(["Overview", "Messaging", "Payments", "Profile"] as Tab[]).map((tab) => (
-          <button key={tab} className={activeTab === tab ? "selected" : ""} onClick={() => switchTab(tab)} disabled={!availableTabs.includes(tab)}>
-            {tab === "Overview" && <Home />}
-            {tab === "Messaging" && <MessageSquare />}
-            {tab === "Payments" && <CreditCard />}
-            {tab === "Profile" && <UserCog />}
-          </button>
-        ))}
+        {availableTabs.map((tab) => {
+          const Icon = tabIcons[tab];
+          return (
+            <button
+              key={tab}
+              type="button"
+              className={activeTab === tab ? "selected" : ""}
+              onClick={() => switchTab(tab)}
+              aria-label={tab}
+              aria-current={activeTab === tab ? "page" : undefined}
+            >
+              <Icon aria-hidden="true" />
+            </button>
+          );
+        })}
       </nav>
     </main>
   );
