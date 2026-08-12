@@ -51,8 +51,20 @@ CREATE TABLE properties (
   manager_id UUID REFERENCES users(id),
   name TEXT NOT NULL,
   address TEXT NOT NULL,
+  street TEXT,
+  location TEXT,
   latitude NUMERIC(10, 7),
   longitude NUMERIC(10, 7),
+  electricity_price TEXT,
+  garbage_price TEXT,
+  water_price TEXT,
+  property_type TEXT,
+  contact_name TEXT,
+  contact_phone TEXT,
+  contact_email TEXT,
+  contract_fee NUMERIC(12, 2),
+  management_quote TEXT,
+  agreement_template_url TEXT,
   valuation NUMERIC(14, 2) NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -155,6 +167,7 @@ CREATE TABLE maintenance_tickets (
   priority ticket_priority NOT NULL DEFAULT 'medium',
   status ticket_status NOT NULL DEFAULT 'submitted',
   media_urls JSONB NOT NULL DEFAULT '[]',
+  follow_ups JSONB NOT NULL DEFAULT '[]',
   predicted_cost NUMERIC(12, 2),
   resolved_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -210,6 +223,17 @@ CREATE TABLE notifications (
   payload JSONB NOT NULL DEFAULT '{}',
   delivered_at TIMESTAMPTZ,
   failed_reason TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE agreement_templates (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  property_id UUID REFERENCES properties(id) ON DELETE SET NULL,
+  name TEXT NOT NULL,
+  template_text TEXT NOT NULL,
+  uploaded_by UUID REFERENCES users(id),
+  file_name TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

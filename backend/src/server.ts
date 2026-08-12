@@ -10,6 +10,7 @@ import { databaseHealth } from "./db.js";
 import {
   auditLogs,
   chatMessages,
+  expenses,
   leases,
   maintenanceTickets,
   messageThreads,
@@ -29,13 +30,21 @@ import {
   createMessageThread,
   createNotification,
   createPayment as createDbPayment,
+  updatePaymentStatus,
   createPaymentAccount,
+  createProperty,
+  createUnit,
+  createAgreementTemplate,
+  listAgreementTemplates,
+  listNotifications,
   createThreadMessage,
+  updateMaintenanceTicket,
   createUser,
   listTenants,
   updateUser,
   dashboardMetrics,
   findUserByEmail,
+  findUserById,
   listMessageThreads,
   listNotificationSchedules,
   listLeases,
@@ -47,6 +56,9 @@ import {
   listProperties,
   listThreadMessages,
   listUnits,
+  updateUnit,
+  listExpenses,
+  createExpense,
   upsertMonthlyRentReminder
 } from "./repositories.js";
 import { Payment, Role, User } from "./types.js";
@@ -54,6 +66,17 @@ import { Payment, Role, User } from "./types.js";
 const app = express();
 const port = Number(process.env.PORT ?? 4000);
 const aiServiceUrl = process.env.AI_SERVICE_URL ?? "http://localhost:7000";
+let wss: WebSocketServer | null = null;
+
+function broadcastRealtime(event: Record<string, unknown>) {
+  if (!wss) return;
+  const payload = JSON.stringify(event);
+  wss.clients.forEach((client) => {
+    if (client.readyState === client.OPEN) {
+      client.send(payload);
+    }
+  });
+}
 
 const rolePermissions = {
   tenant: ["PAY_RENT", "VIEW_RECEIPTS", "SUBMIT_MAINTENANCE", "READ_NOTICES", "MESSAGE_MANAGEMENT"],
@@ -91,7 +114,7 @@ app.get("/openapi.json", (_req, res) => res.json(openApiDocument));
 const specialOwnerEmail = "obwandalordphick14@gmail.com";
 
 app.post("/api/auth/signup", async (req, res) => {
-  const { name, email, phone, password = "RentFlow@2026", role = "tenant" } = req.body;
+  const { name, email, phone, password = "RentFlow@2026", role = "tenant", apartment, houseNumber } = req.body;
   if (!name || !email || !phone) return res.status(400).json({ error: "name, email, and phone are required" });
   if (role !== "tenant") {
     return res.status(403).json({ error: "Sign up is only available for tenant accounts. Management and owner accounts must be created by admin." });
@@ -106,6 +129,14 @@ app.post("/api/auth/signup", async (req, res) => {
   } catch (error) {
     const user: User & { passwordHash: string } = { id: `usr_${Date.now()}`, name, email, phone, role: "tenant", mfaEnabled: false, verified: false, passwordHash };
     users.push(user);
+    if (houseNumber) {
+      const unit = units.find((candidate) => candidate.label.toLowerCase() === String(houseNumber).trim().toLowerCase() &&
+        (!apartment || String(properties.find((property) => property.name.toLowerCase() === String(apartment).trim().toLowerCase())?.id ?? "") === String(candidate.propertyId))) as any;
+      if (unit && !unit.tenantId) {
+        unit.tenantId = user.id;
+        unit.status = "occupied";
+      }
+    }
     auditLogs.push({ id: `aud_${Date.now()}`, actorId: user.id, action: "SIGNUP", target: user.email, createdAt: new Date().toISOString() });
     const accessToken = signAccessToken(user);
     return res.status(201).json({
@@ -172,11 +203,16 @@ app.post("/api/admin/users", authenticate, async (req, res) => {
 });
 
 app.post("/api/auth/login", async (req, res) => {
-  const { email, password, device = "unknown device" } = req.body;
+  const rawEmail = req.body?.email;
+  const rawPassword = req.body?.password;
+  const password = String(rawPassword ?? "").trim();
+  const device = String(req.body?.device ?? "unknown device");
+  const email = String(rawEmail ?? "").trim().toLowerCase();
   const dbUser = await findUserByEmail(email).catch(() => null);
-  const fallbackUser = users.find((candidate) => candidate.email === email) as (User & { passwordHash?: string }) | undefined;
+  const fallbackUser = users.find((candidate) => candidate.email.toLowerCase() === email) as (User & { passwordHash?: string }) | undefined;
   const user = dbUser ?? fallbackUser;
   const hash = dbUser?.passwordHash ?? fallbackUser?.passwordHash ?? passwordHashByEmail[email];
+  console.log("LOGIN ATTEMPT", { email, passwordLength: password.length, device, hasDbUser: Boolean(dbUser), hasFallbackUser: Boolean(fallbackUser), hashFound: Boolean(hash) });
   const valid = Boolean(user) && (password === "RentFlow@2026" || (hash ? await bcrypt.compare(password, hash) : false));
   if (!user || !valid) return res.status(401).json({ error: "Invalid credentials" });
   const accessToken = signAccessToken(user);
@@ -227,6 +263,136 @@ app.get("/api/properties", authenticate, async (_req, res) => {
   res.json({ data });
 });
 
+app.post("/api/properties", authenticate, requireRoles("caretaker", "owner", "super_admin"), async (req, res) => {
+  try {
+    const property = await createProperty(req.user!, {
+      name: String(req.body.name ?? ""),
+      address: String(req.body.address ?? ""),
+      street: req.body.street ? String(req.body.street) : undefined,
+      location: req.body.location ? String(req.body.location) : undefined,
+      latitude: req.body.latitude ? Number(req.body.latitude) : undefined,
+      longitude: req.body.longitude ? Number(req.body.longitude) : undefined,
+      electricityPrice: req.body.electricityPrice ? String(req.body.electricityPrice) : undefined,
+      garbagePrice: req.body.garbagePrice ? String(req.body.garbagePrice) : undefined,
+      waterPrice: req.body.waterPrice ? String(req.body.waterPrice) : undefined,
+      propertyType: req.body.propertyType ? String(req.body.propertyType) : undefined,
+      contactName: req.body.contactName ? String(req.body.contactName) : undefined,
+      contactPhone: req.body.contactPhone ? String(req.body.contactPhone) : undefined,
+      contactEmail: req.body.contactEmail ? String(req.body.contactEmail) : undefined,
+      contractFee: req.body.contractFee ? Number(req.body.contractFee) : undefined,
+      managementQuote: req.body.managementQuote ? String(req.body.managementQuote) : undefined,
+      agreementTemplateUrl: req.body.agreementTemplateUrl ? String(req.body.agreementTemplateUrl) : undefined,
+      valuation: req.body.valuation ? Number(req.body.valuation) : undefined
+    });
+    await createAuditLog(req.user!.id, "CREATE_PROPERTY", "property", String(property.id), { name: String(property.name) }).catch(() => undefined);
+    broadcastRealtime({ type: "property.created", property });
+    res.status(201).json({ data: property });
+  } catch (error) {
+    return res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+app.post("/api/units", authenticate, requireRoles("caretaker", "owner", "super_admin"), async (req, res) => {
+  try {
+    const unit = await createUnit(req.user!, {
+      propertyId: String(req.body.propertyId ?? ""),
+      label: String(req.body.label ?? ""),
+      rent: Number(req.body.rent ?? 0),
+      deposit: req.body.deposit ? Number(req.body.deposit) : undefined,
+      leaseMonths: req.body.leaseMonths ? Number(req.body.leaseMonths) : undefined,
+      status: String(req.body.status ?? "vacant")
+    });
+    await createAuditLog(req.user!.id, "CREATE_UNIT", "unit", String(unit.id), { label: String(unit.label), propertyId: String(unit.propertyId) }).catch(() => undefined);
+    broadcastRealtime({ type: "unit.created", unit });
+    res.status(201).json({ data: unit });
+  } catch (error) {
+    return res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+app.get("/api/notifications", authenticate, async (req, res) => {
+  const data = await listNotifications(req.user!).catch(() => []);
+  res.json({ data });
+});
+
+function fillAgreementTemplate(templateText: string, values: Record<string, string>) {
+  return Object.entries(values).reduce((text, [key, value]) => {
+    return text.replace(new RegExp(`{{\s*${key}\s*}}`, "gi"), value);
+  }, templateText);
+}
+
+app.get("/api/agreements/templates", authenticate, async (req, res) => {
+  const data = await listAgreementTemplates(req.user!).catch(() => []);
+  res.json({ data });
+});
+
+app.post("/api/agreements/templates", authenticate, requireRoles("caretaker", "owner", "super_admin"), async (req, res) => {
+  try {
+    const template = await createAgreementTemplate(req.user!, {
+      propertyId: req.body.propertyId ? String(req.body.propertyId) : undefined,
+      name: String(req.body.name ?? "Lease agreement template"),
+      templateText: String(req.body.templateText ?? ""),
+      fileName: req.body.fileName ? String(req.body.fileName) : undefined
+    });
+    await createAuditLog(req.user!.id, "UPLOAD_AGREEMENT_TEMPLATE", "agreement_template", String(template.id), { propertyId: template.propertyId ? String(template.propertyId) : undefined }).catch(() => undefined);
+    broadcastRealtime({ type: "agreement.template.created", template });
+    res.status(201).json({ data: template });
+  } catch (error) {
+    return res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+app.post("/api/agreements/generate", authenticate, requireRoles("caretaker", "owner", "super_admin"), async (req, res) => {
+  const propertyId = String(req.body.propertyId ?? "");
+  if (!propertyId) return res.status(400).json({ error: "propertyId is required" });
+
+  try {
+    const templates = await listAgreementTemplates(req.user!).catch(() => []);
+    const template = templates.find((item) => item.propertyId === propertyId);
+    if (!template) return res.status(404).json({ error: "No agreement template found for this property" });
+
+    const propertyList = await listProperties().catch(() => properties) as Array<{ id: string; name: string; address: string }>;
+    const property = propertyList.find((item) => item.id === propertyId);
+    if (!property) return res.status(404).json({ error: "Property not found" });
+
+    const unitIds = Array.isArray(req.body.unitIds) ? req.body.unitIds.map(String) : [];
+    const unitData = await listUnits().catch(() => units) as Array<{ id: string; propertyId: string; tenantId?: string; label: string; rent?: number; deposit?: number }>;
+    const selectedUnits = unitIds.length > 0
+      ? unitData.filter((unit) => unitIds.includes(String(unit.id)))
+      : unitData.filter((unit) => unit.propertyId === propertyId && unit.tenantId);
+
+    const agreementTemplate = template as { id: string; templateText: string };
+    const leaseItems = await Promise.all(selectedUnits.map(async (unit) => {
+      const tenant = unit.tenantId ? await findUserById(unit.tenantId).catch(() => null) : null;
+      const values: Record<string, string> = {
+        tenantName: tenant?.name ?? "Tenant",
+        tenantEmail: tenant?.email ?? "tenant@example.com",
+        tenantPhone: tenant?.phone ?? "N/A",
+        propertyName: property.name,
+        propertyAddress: property.address,
+        unitLabel: unit.label,
+        rentAmount: String(unit.rent ?? 0),
+        depositAmount: String(unit.deposit ?? 0),
+        leaseStart: new Date().toISOString().split("T")[0],
+        leaseEnd: new Date(Date.now() + 1000 * 60 * 60 * 24 * 365).toISOString().split("T")[0],
+        currentDate: new Date().toISOString().split("T")[0]
+      };
+      return {
+        unitId: unit.id,
+        tenantId: unit.tenantId,
+        tenantName: tenant?.name ?? "Unassigned tenant",
+        renderedText: fillAgreementTemplate(agreementTemplate.templateText, values),
+        fileName: `${property.name.replace(/\s+/g, "_")}-${unit.label}-lease.txt`
+      };
+    }));
+
+    await createAuditLog(req.user!.id, "GENERATE_LEASES", "property", propertyId, { templateId: template.id, generated: leaseItems.length }).catch(() => undefined);
+    res.json({ data: leaseItems });
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
 app.get("/api/security", authenticate, async (req, res) => {
   const data = await listSecurityRecords().catch(() => securityRecords);
   res.json({ data, storage: Array.isArray(data) ? "postgres" : "memory-fallback" });
@@ -259,6 +425,72 @@ app.get("/api/units", authenticate, async (_req, res) => {
   const data = await listUnits().catch(() => units);
   res.json({ data });
 });
+
+app.put("/api/units/:unitId", authenticate, requireRoles("caretaker", "owner", "super_admin"), async (req, res) => {
+  const unitId = String(req.params.unitId);
+  try {
+    const updatedUnit = await updateUnit({
+      id: unitId,
+      status: req.body.status,
+      tenantId: req.body.tenantId
+    }).catch(() => null);
+    if (updatedUnit) {
+      return res.json({ data: updatedUnit, storage: "postgres" });
+    }
+    const index = units.findIndex((unit) => unit.id === unitId);
+    if (index === -1) return res.status(404).json({ error: "Unit not found" });
+    units[index] = {
+      ...units[index],
+      status: req.body.status ?? units[index].status,
+      tenantId: req.body.tenantId ?? units[index].tenantId
+    };
+    await createAuditLog(req.user!.id, "UPDATE_UNIT", "unit", unitId, { status: units[index].status, tenantId: units[index].tenantId }).catch(() => undefined);
+    return res.json({ data: units[index], storage: "memory-fallback" });
+  } catch (error) {
+    return res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+app.get("/api/expenses", authenticate, requireRoles("caretaker", "owner", "super_admin"), async (req, res) => {
+  const data = await listExpenses(req.user!).catch(() => expenses);
+  res.json({ data });
+});
+
+app.post("/api/expenses", authenticate, requireRoles("caretaker", "owner", "super_admin"), async (req, res) => {
+  const { propertyId, category, description, amount, receiptUrl } = req.body;
+  if (!propertyId || !category || !description || !amount) {
+    return res.status(400).json({ error: "propertyId, category, description, and amount are required" });
+  }
+  try {
+    const expense = await createExpense(req.user!, {
+      propertyId: String(propertyId),
+      category: String(category),
+      description: String(description),
+      amount: Number(amount),
+      requestedBy: req.user!.id,
+      receiptUrl: receiptUrl ? String(receiptUrl) : undefined
+    }).catch(() => null);
+    if (expense) {
+      return res.status(201).json({ data: expense, storage: "postgres" });
+    }
+    const record = {
+      id: `exp_${Date.now()}`,
+      propertyId: String(propertyId),
+      requestedBy: req.user!.id,
+      category: String(category),
+      description: String(description),
+      amount: Number(amount),
+      receiptUrl: receiptUrl ? String(receiptUrl) : undefined,
+      createdAt: new Date().toISOString()
+    };
+    expenses.unshift(record);
+    await createAuditLog(req.user!.id, "CREATE_EXPENSE", "property", propertyId, { category, amount }).catch(() => undefined);
+    return res.status(201).json({ data: record, storage: "memory-fallback" });
+  } catch (error) {
+    return res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
 app.get("/api/leases", authenticate, async (_req, res) => {
   const data = await listLeases().catch(() => leases);
   res.json({ data });
@@ -283,6 +515,24 @@ app.post("/api/payments", authenticate, async (req, res) => {
   const dbPayment = await createDbPayment(payment).catch(() => null);
   if (!dbPayment) payments.push(payment);
   res.status(201).json({ data: dbPayment ?? payment, storage: dbPayment ? "postgres" : "memory-fallback", provider: { mpesa: "daraja-callback-pending", stripe: "payment-intent-ready" } });
+});
+
+app.put("/api/payments/:paymentId", authenticate, requireRoles("caretaker", "owner", "super_admin"), async (req, res) => {
+  const paymentId = String(req.params.paymentId);
+  const status = String(req.body.status ?? "approved") as Payment["status"];
+  try {
+    const updatedPayment = await updatePaymentStatus(paymentId, status).catch(() => null);
+    if (updatedPayment) {
+      return res.json({ data: updatedPayment, storage: "postgres" });
+    }
+    const idx = payments.findIndex((payment) => payment.id === paymentId);
+    if (idx === -1) return res.status(404).json({ error: "Payment not found" });
+    payments[idx] = { ...payments[idx], status };
+    await createAuditLog(req.user!.id, "APPROVE_PAYMENT", "payment", paymentId, { status }).catch(() => undefined);
+    return res.json({ data: payments[idx], storage: "memory-fallback" });
+  } catch (error) {
+    return res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
+  }
 });
 
 app.get("/api/tenants", authenticate, requireRoles("caretaker", "owner", "super_admin"), async (req, res) => {
@@ -346,9 +596,12 @@ app.post("/api/payments/bank-debit", authenticate, requireRoles("tenant"), async
   });
 });
 
-app.get("/api/maintenance", authenticate, async (_req, res) => {
+app.get("/api/maintenance", authenticate, async (req, res) => {
   const data = await listMaintenanceTickets().catch(() => maintenanceTickets);
-  res.json({ data });
+  const filtered = req.user!.role === "tenant"
+    ? data.filter((ticket) => ticket.tenantId === req.user!.id)
+    : data;
+  res.json({ data: filtered });
 });
 
 app.post("/api/maintenance", authenticate, async (req, res) => {
@@ -358,13 +611,54 @@ app.post("/api/maintenance", authenticate, async (req, res) => {
     unitId: req.body.unitId,
     tenantId: req.user!.id,
     title: req.body.title,
+    description: String(req.body.description ?? ""),
     priority: req.body.priority ?? "medium",
     status: "submitted" as const,
     mediaUrls: req.body.mediaUrls ?? []
   };
   const dbTicket = await createMaintenanceTicket(ticket).catch(() => null);
+  const createdTicket = dbTicket ?? ticket;
   if (!dbTicket) maintenanceTickets.push(ticket);
-  res.status(201).json({ data: dbTicket ?? ticket, storage: dbTicket ? "postgres" : "memory-fallback", escalation: ticket.priority === "emergency" ? "caretaker-and-owner-alerted" : "standard-queue" });
+  broadcastRealtime({ type: "maintenance.ticket.created", ticket: createdTicket });
+  res.status(201).json({ data: createdTicket, storage: dbTicket ? "postgres" : "memory-fallback", escalation: ticket.priority === "emergency" ? "caretaker-and-owner-alerted" : "standard-queue" });
+});
+
+app.put("/api/maintenance/:ticketId", authenticate, requireRoles("caretaker", "owner", "super_admin", "worker"), async (req, res) => {
+  const ticketId = String(req.params.ticketId);
+  try {
+    const updatedTicket = await updateMaintenanceTicket({
+      ticketId,
+      status: req.body.status,
+      description: req.body.description,
+      assignedTo: req.body.assignedTo,
+      vendorName: req.body.vendorName,
+      followUp: req.body.followUp ? { author: req.user!.name, note: String(req.body.followUp), createdAt: new Date().toISOString() } : undefined
+    }).catch(() => null);
+    if (updatedTicket) {
+      broadcastRealtime({ type: "maintenance.ticket.updated", ticket: updatedTicket });
+      return res.json({ data: updatedTicket, storage: "postgres" });
+    }
+
+    const index = maintenanceTickets.findIndex((ticket) => ticket.id === ticketId);
+    if (index === -1) return res.status(404).json({ error: "Maintenance ticket not found" });
+    const existing = maintenanceTickets[index];
+    const followUps = existing.followUps ? [...existing.followUps] : [];
+    if (req.body.followUp) {
+      followUps.push({ author: req.user!.name, note: String(req.body.followUp), createdAt: new Date().toISOString() });
+    }
+    maintenanceTickets[index] = {
+      ...existing,
+      status: req.body.status ?? existing.status,
+      description: String(req.body.description ?? existing.description ?? ""),
+      assignedTo: req.body.assignedTo ?? existing.assignedTo,
+      vendorName: req.body.vendorName ?? existing.vendorName,
+      followUps
+    };
+    broadcastRealtime({ type: "maintenance.ticket.updated", ticket: maintenanceTickets[index] });
+    res.json({ data: maintenanceTickets[index], storage: "memory-fallback" });
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
+  }
 });
 
 app.get("/api/messages/threads", authenticate, async (req, res) => {
@@ -430,6 +724,7 @@ app.post("/api/messages", authenticate, async (req, res) => {
       }).catch(() => undefined),
       createAuditLog(req.user!.id, "MESSAGE_SENT", "thread", req.body.threadId, { messageId }).catch(() => undefined)
     ]);
+    broadcastRealtime({ type: "chat.message", message: dbMessage, threadId: req.body.threadId });
     return res.status(201).json({ data: dbMessage, status: "delivered", notifications: ["push", "in_app"], storage: "postgres" });
   }
 
@@ -450,6 +745,7 @@ app.post("/api/messages", authenticate, async (req, res) => {
     readBy: [req.user!.id]
   };
   chatMessages.push(message);
+  broadcastRealtime({ type: "chat.message", message, threadId: message.threadId });
   res.status(201).json({ data: message, status: "delivered", notifications: ["push", "in_app"], storage: "memory-fallback" });
 });
 
@@ -481,9 +777,13 @@ app.post("/api/notifications", authenticate, requireRoles("caretaker", "owner", 
       payload: req.body.payload ?? {}
     }).catch(() => null)
   ));
+  const pushed = queued.filter(Boolean);
+  if (pushed.length > 0) {
+    broadcastRealtime({ type: "notification.sent", notifications: pushed });
+  }
   res.status(202).json({
     status: "queued",
-    data: queued.filter(Boolean),
+    data: pushed,
     channels,
     integrations: ["Twilio", "SendGrid", "Firebase Cloud Messaging", "WhatsApp Business"]
   });
@@ -509,10 +809,19 @@ const server = app.listen(port, () => {
   console.log(`RentFlow API listening on http://localhost:${port}`);
 });
 
-const wss = new WebSocketServer({ server, path: "/realtime" });
+wss = new WebSocketServer({ server, path: "/realtime" });
 wss.on("connection", (socket) => {
   socket.send(JSON.stringify({ type: "connected", channel: "rentflow-realtime" }));
   socket.on("message", (message) => {
-    wss.clients.forEach((client) => client.send(JSON.stringify({ type: "broadcast", payload: message.toString() })));
+    try {
+      const payload = JSON.parse(message.toString());
+      if (payload && typeof payload === "object" && ["call.request", "call.answer", "call.hangup"].includes(payload.type)) {
+        broadcastRealtime(payload);
+        return;
+      }
+    } catch {
+      // ignore invalid JSON messages
+    }
+    wss?.clients.forEach((client) => client.send(JSON.stringify({ type: "broadcast", payload: message.toString() })));
   });
 });

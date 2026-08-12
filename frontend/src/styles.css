@@ -22,147 +22,178 @@ body {
   min-height: 100vh;
   display: grid;
   place-items: center;
-  padding: 20px;
+  padding: 24px;
   background:
-    radial-gradient(circle at 22% 8%, rgba(125, 211, 252, .28), transparent 30%),
-    linear-gradient(155deg, #06111f, #0b2740 55%, #071827);
-  color: #f8fbff;
+    radial-gradient(circle at 20% 8%, rgba(56, 189, 248, .08), transparent 22%),
+    radial-gradient(circle at 80% 16%, rgba(59, 130, 246, .08), transparent 18%),
+    linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
+  color: #0f172a;
   overflow: hidden;
 }
 
 .landing-card,
 .auth-card {
-  width: min(960px, 100%);
-  border-radius: 28px;
-  border: 1px solid rgba(190, 226, 255, .24);
-  background:
-    linear-gradient(145deg, rgba(255, 255, 255, .12), rgba(255, 255, 255, .04)),
-    linear-gradient(155deg, rgba(13, 44, 72, .96), rgba(7, 24, 43, .96));
-  box-shadow: 0 28px 70px rgba(2, 6, 23, .42);
-  padding: clamp(22px, 5vw, 56px);
+  width: min(900px, 100%);
+  border-radius: 32px;
+  border: 1px solid rgba(15, 23, 42, .06);
+  background: rgba(255, 255, 255, .94);
+  box-shadow: 0 30px 60px rgba(15, 23, 42, .12);
+  padding: clamp(28px, 4vw, 60px);
 }
 
 .auth-card {
-  width: min(520px, 100%);
+  width: min(540px, 100%);
 }
 
 .landing-brand {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
   font-weight: 760;
+  color: #0f172a;
+}
+
+.landing-brand .brand-mark {
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, #007aff, #60a5fa);
+  color: #fff;
+  font-size: 1.2rem;
+  font-weight: 900;
 }
 
 .landing-copy {
-  margin: clamp(34px, 8vh, 74px) 0 26px;
+  margin: clamp(28px, 7vh, 64px) 0 28px;
 }
 
 .landing-copy span,
-.auth-card p {
-  color: #a7c3d8;
+.auth-card p,
+.small-copy {
+  color: #475569;
 }
 
 .landing-copy h1,
 .auth-card h1 {
   max-width: 780px;
   margin: 10px 0 14px;
-  font-size: clamp(2.15rem, 6vw, 5rem);
-  line-height: 1;
-  letter-spacing: 0;
-  font-weight: 720;
+  font-size: clamp(2rem, 5vw, 4.2rem);
+  line-height: 1.02;
+  letter-spacing: -0.03em;
+  font-weight: 800;
+  color: #0f172a;
 }
 
 .auth-card h1 {
-  font-size: clamp(2rem, 5vw, 3.2rem);
+  font-size: clamp(2rem, 5vw, 3rem);
 }
 
 .landing-copy p {
   max-width: 620px;
   margin: 0;
-  color: #c4d8e8;
-  line-height: 1.65;
+  color: #475569;
+  line-height: 1.7;
 }
 
 .landing-preview {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-  margin: 24px 0;
+  gap: 16px;
+  margin: 28px 0;
 }
 
 .landing-preview div {
-  padding: 16px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, .1);
-  border: 1px solid rgba(255, 255, 255, .12);
+  padding: 18px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, .82);
+  border: 1px solid rgba(15, 23, 42, .08);
 }
 
 .landing-preview strong {
   display: block;
-  font-size: 1.55rem;
+  font-size: 1.3rem;
+  color: #0f172a;
 }
 
 .landing-preview span {
-  color: #a7c3d8;
+  color: #64748b;
 }
 
 .primary-cta {
-  min-height: 54px;
-  padding: 0 22px;
+  min-height: 56px;
+  padding: 0 26px;
   border-radius: 18px;
-  color: #06111f;
-  background: linear-gradient(135deg, #e0f2fe, #bfdbfe);
-  font-weight: 720;
+  color: #fff;
+  background: linear-gradient(135deg, #007aff, #60a5fa);
+  font-weight: 700;
+  box-shadow: 0 18px 34px rgba(0, 122, 255, .2);
 }
 
 .auth-toggle,
 .role-choice {
   display: grid;
-  gap: 8px;
+  gap: 10px;
 }
 
 .auth-toggle {
   grid-template-columns: repeat(2, 1fr);
-  margin: 22px 0;
-  padding: 5px;
-  border-radius: 16px;
-  background: rgba(255, 255, 255, .08);
+  margin: 24px 0;
+  padding: 6px;
+  border-radius: 18px;
+  background: #f1f5f9;
+  border: 1px solid rgba(15, 23, 42, .08);
 }
 
 .auth-toggle button,
 .role-choice button {
-  min-height: 42px;
-  border-radius: 12px;
-  color: #c4d8e8;
+  min-height: 50px;
+  border-radius: 16px;
+  color: #334155;
   background: transparent;
+  border: 1px solid transparent;
+  transition: background .2s ease, color .2s ease, border-color .2s ease;
 }
 
 .auth-toggle button.selected,
 .role-choice button.selected {
-  color: #06111f;
-  background: #f8fafc;
+  color: #0f172a;
+  background: #ffffff;
+  border-color: rgba(15, 23, 42, .08);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, .08);
 }
 
 .auth-card label {
   display: grid;
-  gap: 8px;
-  margin-bottom: 14px;
-  color: #c4d8e8;
+  gap: 10px;
+  margin-bottom: 18px;
+  color: #334155;
 }
 
-.auth-card input {
-  height: 48px;
-  border: 1px solid rgba(255, 255, 255, .14);
-  border-radius: 14px;
-  padding: 0 14px;
-  color: #f8fbff;
-  background: rgba(255, 255, 255, .08);
-  outline: 0;
+.auth-card input,
+.auth-card select,
+.auth-card textarea {
+  height: 52px;
+  border: 1px solid rgba(15, 23, 42, .12);
+  border-radius: 16px;
+  padding: 0 16px;
+  color: #0f172a;
+  background: #f8fafc;
+  outline: none;
+  transition: border-color .2s ease, box-shadow .2s ease;
+}
+
+.auth-card input:focus,
+.auth-card select:focus,
+.auth-card textarea:focus {
+  border-color: #60a5fa;
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, .12);
 }
 
 .role-choice {
   grid-template-columns: repeat(2, 1fr);
-  margin: 18px 0;
+  margin: 20px 0;
 }
 
 button {
@@ -175,6 +206,47 @@ input,
 select,
 textarea {
   font: inherit;
+}
+
+.auth-choice-grid {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 30px;
+}
+
+.choice-card {
+  padding: 26px;
+  border-radius: 28px;
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, .08);
+  box-shadow: 0 20px 40px rgba(15, 23, 42, .08);
+}
+
+.choice-card.highlighted {
+  background: linear-gradient(180deg, rgba(56, 189, 248, .12), rgba(59, 130, 246, .06));
+  border-color: rgba(59, 130, 246, .18);
+}
+
+.choice-card h2 {
+  margin-top: 0;
+  font-size: 1.55rem;
+  color: #0f172a;
+}
+
+.choice-card p {
+  margin: 12px 0 20px;
+  color: #475569;
+  line-height: 1.7;
+}
+
+.choice-card button {
+  width: fit-content;
+}
+
+.small-copy {
+  margin-top: 22px;
+  color: #64748b;
 }
 
 .app {

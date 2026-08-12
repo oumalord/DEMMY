@@ -4,9 +4,9 @@ VALUES ('00000000-0000-0000-0000-000000000001', 'RentFlow Demo Holdings', 'growt
 INSERT INTO users (id, organization_id, name, email, phone, password_hash, role, mfa_enabled, email_verified_at, sms_verified_at)
 VALUES
 ('00000000-0000-0000-0000-000000000101', '00000000-0000-0000-0000-000000000001', 'Amina Otieno', 'tenant@rentflow.app', '+254700000101', '$2a$10$BzADq5xZJyW.Rzsavp/3yeE7qDvgimN0OADyM6lZmbW9PpyuLJvGW', 'tenant', true, now(), now()),
-('00000000-0000-0000-0000-000000000102', '00000000-0000-0000-0000-000000000001', 'Joseph Kariuki', 'caretaker@rentflow.app', '+254700000102', '$2a$10$BzADq5xZJyW.Rzsavp/3yeE7qDvgimN0OADyM6lZmbW9PpyuLJvGW', 'caretaker', true, now(), now()),
+('00000000-0000-0000-0000-000000000102', '00000000-0000-0000-0000-000000000001', 'Obwanda Lord', 'obwandalordphick14@gmail.com', '+254700000102', '$2a$10$stkcD5P3gVRKKqLMpmfXcOjGgmwl.GFq6tkgwI2jJBHg.loPH/YAO', 'caretaker', true, now(), now()),
 ('00000000-0000-0000-0000-000000000103', '00000000-0000-0000-0000-000000000001', 'Naomi Wanjiru', 'owner@rentflow.app', '+254700000103', '$2a$10$BzADq5xZJyW.Rzsavp/3yeE7qDvgimN0OADyM6lZmbW9PpyuLJvGW', 'owner', true, now(), now()),
-('00000000-0000-0000-0000-000000000104', '00000000-0000-0000-0000-000000000001', 'RentFlow Admin', 'admin@rentflow.app', '+254700000104', '$2a$10$BzADq5xZJyW.Rzsavp/3yeE7qDvgimN0OADyM6lZmbW9PpyuLJvGW', 'super_admin', true, now(), now());
+('00000000-0000-0000-0000-000000000104', '00000000-0000-0000-0000-000000000001', 'Amani Core Tech', 'amanicoretech@gmail.com', '+254700000104', '$2a$10$stkcD5P3gVRKKqLMpmfXcOjGgmwl.GFq6tkgwI2jJBHg.loPH/YAO', 'super_admin', true, now(), now());
 
 INSERT INTO properties (id, organization_id, owner_id, manager_id, name, address, latitude, longitude, valuation)
 VALUES
@@ -32,9 +32,9 @@ VALUES
 ('00000000-0000-0000-0000-000000000001', 'mpesa', 'Main M-Pesa Paybill', 'RentFlow Demo Holdings', null, null, null, '123456', 'UNIT_NUMBER', '00000000-0000-0000-0000-000000000104'),
 ('00000000-0000-0000-0000-000000000001', 'bank', 'Main rent collection bank', 'RentFlow Demo Holdings', 'Equity Bank', '0123456789', 'EQBLKENA', null, null, '00000000-0000-0000-0000-000000000104');
 
-INSERT INTO maintenance_tickets (property_id, unit_id, tenant_id, assigned_to, vendor_name, title, description, priority, status, media_urls, predicted_cost)
+INSERT INTO maintenance_tickets (property_id, unit_id, tenant_id, assigned_to, vendor_name, title, description, priority, status, media_urls, follow_ups, predicted_cost)
 VALUES
-('00000000-0000-0000-0000-000000000201', '00000000-0000-0000-0000-000000000301', '00000000-0000-0000-0000-000000000101', '00000000-0000-0000-0000-000000000102', 'Apex Plumbing', 'Water heater fault', 'No hot water in unit A-12.', 'emergency', 'assigned', '["/uploads/water-heater.jpg"]', 185),
+('00000000-0000-0000-0000-000000000201', '00000000-0000-0000-0000-000000000301', '00000000-0000-0000-0000-000000000101', '00000000-0000-0000-0000-000000000102', 'Apex Plumbing', 'Water heater fault', 'No hot water in unit A-12.', 'emergency', 'assigned', '["/uploads/water-heater.jpg"]', '[]', 185),
 ('00000000-0000-0000-0000-000000000202', '00000000-0000-0000-0000-000000000303', '00000000-0000-0000-0000-000000000101', '00000000-0000-0000-0000-000000000102', null, 'Utility meter anomaly', 'Meter is reporting unusual overnight usage.', 'high', 'in_progress', '[]', 90);
 
 INSERT INTO message_threads (id, organization_id, property_id, name, type, pinned_notice, created_by)
