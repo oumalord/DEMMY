@@ -19,6 +19,7 @@ import {
   units,
   users
 } from "./data/demoData.js";
+import { securityRecords } from "./data/demoData.js";
 import { authenticate, requireRoles, signAccessToken } from "./middleware/auth.js";
 import { openApiDocument } from "./openapi.js";
 import {
@@ -31,6 +32,8 @@ import {
   createPaymentAccount,
   createThreadMessage,
   createUser,
+  listTenants,
+  updateUser,
   dashboardMetrics,
   findUserByEmail,
   listMessageThreads,
@@ -39,6 +42,8 @@ import {
   listMaintenanceTickets,
   listPayments,
   listPaymentAccounts,
+  listSecurityRecords,
+  createSecurityRecord,
   listProperties,
   listThreadMessages,
   listUnits,
@@ -54,14 +59,16 @@ const rolePermissions = {
   tenant: ["PAY_RENT", "VIEW_RECEIPTS", "SUBMIT_MAINTENANCE", "READ_NOTICES", "MESSAGE_MANAGEMENT"],
   caretaker: ["MANAGE_UNITS", "ONBOARD_TENANTS", "ASSIGN_MAINTENANCE", "BROADCAST_NOTICES", "VIEW_ARREARS"],
   owner: ["VIEW_PORTFOLIO", "APPROVE_EXPENSES", "EXPORT_REPORTS", "MONITOR_CARETAKERS", "MANAGE_PROPERTIES"],
-  super_admin: ["MANAGE_USERS", "MANAGE_SUBSCRIPTIONS", "VIEW_GLOBAL_ANALYTICS", "SECURITY_MONITORING", "PLATFORM_ANNOUNCEMENTS"]
+  super_admin: ["MANAGE_USERS", "MANAGE_SUBSCRIPTIONS", "VIEW_GLOBAL_ANALYTICS", "SECURITY_MONITORING", "PLATFORM_ANNOUNCEMENTS"],
+  worker: ["VIEW_ASSIGNED_TICKETS", "UPDATE_TICKET_STATUS", "MESSAGE_MANAGEMENT"]
 };
 
 const roleNavigation = {
   tenant: ["Overview", "Payments", "Maintenance", "Messaging", "Reports", "Security"],
   caretaker: ["Overview", "Properties", "Payments", "Maintenance", "Messaging", "Reports", "Security"],
   owner: ["Overview", "Properties", "Payments", "Maintenance", "Messaging", "Reports", "Security", "Admin"],
-  super_admin: ["Overview", "Properties", "Payments", "Messaging", "Reports", "Security", "Admin"]
+  super_admin: ["Overview", "Properties", "Payments", "Messaging", "Reports", "Security", "Admin"],
+  worker: ["Overview", "Maintenance", "Messaging", "Profile"]
 };
 
 app.use(helmet());
@@ -81,21 +88,29 @@ app.get("/health", async (_req, res) => {
 app.use("/docs", swaggerUi.serve, swaggerUi.setup(openApiDocument));
 app.get("/openapi.json", (_req, res) => res.json(openApiDocument));
 
+const specialOwnerEmail = "obwandalordphick14@gmail.com";
+
 app.post("/api/auth/signup", async (req, res) => {
   const { name, email, phone, password = "RentFlow@2026", role = "tenant" } = req.body;
   if (!name || !email || !phone) return res.status(400).json({ error: "name, email, and phone are required" });
+  if (role !== "tenant") {
+    return res.status(403).json({ error: "Sign up is only available for tenant accounts. Management and owner accounts must be created by admin." });
+  }
   const passwordHash = await bcrypt.hash(password, 10);
 
   try {
-    const user = await createUser({ name, email, phone, passwordHash, role: role as Role });
+    const user = await createUser({ name, email, phone, passwordHash, role: "tenant" });
     await createAuditLog(user.id, "SIGNUP", "user", user.email, { source: "api" }).catch(() => undefined);
-    return res.status(201).json({ user, storage: "postgres", verification: { email: "queued", sms: "queued" } });
+    const accessToken = signAccessToken(user);
+    return res.status(201).json({ user, accessToken, storage: "postgres", verification: { email: "queued", sms: "queued" } });
   } catch (error) {
-    const user: User = { id: `usr_${Date.now()}`, name, email, phone, role: role as Role, mfaEnabled: false, verified: false };
+    const user: User & { passwordHash: string } = { id: `usr_${Date.now()}`, name, email, phone, role: "tenant", mfaEnabled: false, verified: false, passwordHash };
     users.push(user);
     auditLogs.push({ id: `aud_${Date.now()}`, actorId: user.id, action: "SIGNUP", target: user.email, createdAt: new Date().toISOString() });
+    const accessToken = signAccessToken(user);
     return res.status(201).json({
       user,
+      accessToken,
       storage: "memory-fallback",
       warning: error instanceof Error ? error.message : "Database unavailable",
       verification: { email: "queued", sms: "queued" }
@@ -103,12 +118,65 @@ app.post("/api/auth/signup", async (req, res) => {
   }
 });
 
+app.post("/api/admin/users", authenticate, async (req, res) => {
+  const { name, email, phone, password = "Lord9632@@", role = "caretaker", propertyId } = req.body;
+  if (!name || !email || !phone) return res.status(400).json({ error: "name, email, and phone are required" });
+  if (!["caretaker", "owner", "worker"].includes(role)) {
+    return res.status(400).json({ error: "Only caretaker, owner, or worker accounts may be created through this endpoint." });
+  }
+
+  if (role === "owner") {
+    if (req.user!.role !== "owner" || req.user!.email !== specialOwnerEmail) {
+      return res.status(403).json({ error: "Only the designated owner may create other owner accounts." });
+    }
+  } else if (role === "caretaker") {
+    if (req.user!.role !== "super_admin" && !(req.user!.role === "owner" && req.user!.email === specialOwnerEmail)) {
+      return res.status(403).json({ error: "Only super admins or the designated owner may create management accounts." });
+    }
+    if (!propertyId) {
+      return res.status(400).json({ error: "Management accounts require a propertyId." });
+    }
+  } else if (role === "worker") {
+    if (!["super_admin", "owner", "caretaker"].includes(req.user!.role)) {
+      return res.status(403).json({ error: "Only admin or management accounts may create worker accounts." });
+    }
+  }
+
+  const passwordHash = await bcrypt.hash(password, 10);
+  try {
+    const user = await createUser({ name, email, phone, passwordHash, role: role as Role });
+    if (role === "caretaker" && propertyId) {
+      const property = properties.find((item) => item.id === propertyId);
+      if (property) property.managerId = user.id;
+    }
+    if (role === "owner" && propertyId) {
+      const property = properties.find((item) => item.id === propertyId);
+      if (property) property.ownerId = user.id;
+    }
+    await createAuditLog(req.user!.id, "CREATE_USER", "user", user.email, { createdRole: role, propertyId }).catch(() => undefined);
+    return res.status(201).json({ user, accessToken: signAccessToken(user), storage: "postgres" });
+  } catch (error) {
+    const user: User & { passwordHash: string } = { id: `usr_${Date.now()}`, name, email, phone, role: role as Role, mfaEnabled: false, verified: false, passwordHash };
+    users.push(user);
+    if (role === "caretaker" && propertyId) {
+      const property = properties.find((item) => item.id === propertyId);
+      if (property) property.managerId = user.id;
+    }
+    if (role === "owner" && propertyId) {
+      const property = properties.find((item) => item.id === propertyId);
+      if (property) property.ownerId = user.id;
+    }
+    auditLogs.push({ id: `aud_${Date.now()}`, actorId: req.user!.id, action: "CREATE_USER", target: user.email, createdAt: new Date().toISOString() });
+    return res.status(201).json({ user, accessToken: signAccessToken(user), storage: "memory-fallback", warning: error instanceof Error ? error.message : "Database unavailable" });
+  }
+});
+
 app.post("/api/auth/login", async (req, res) => {
   const { email, password, device = "unknown device" } = req.body;
   const dbUser = await findUserByEmail(email).catch(() => null);
-  const fallbackUser = users.find((candidate) => candidate.email === email);
+  const fallbackUser = users.find((candidate) => candidate.email === email) as (User & { passwordHash?: string }) | undefined;
   const user = dbUser ?? fallbackUser;
-  const hash = dbUser?.passwordHash ?? passwordHashByEmail[email];
+  const hash = dbUser?.passwordHash ?? fallbackUser?.passwordHash ?? passwordHashByEmail[email];
   const valid = Boolean(user) && (password === "RentFlow@2026" || (hash ? await bcrypt.compare(password, hash) : false));
   if (!user || !valid) return res.status(401).json({ error: "Invalid credentials" });
   const accessToken = signAccessToken(user);
@@ -158,6 +226,35 @@ app.get("/api/properties", authenticate, async (_req, res) => {
   const data = await listProperties().catch(() => properties);
   res.json({ data });
 });
+
+app.get("/api/security", authenticate, async (req, res) => {
+  const data = await listSecurityRecords().catch(() => securityRecords);
+  res.json({ data, storage: Array.isArray(data) ? "postgres" : "memory-fallback" });
+});
+
+app.post("/api/security", authenticate, requireRoles("caretaker", "owner", "super_admin"), async (req, res) => {
+  try {
+    const dbRecord = await createSecurityRecord(req.user!, req.body).catch(() => null);
+    if (dbRecord) return res.status(201).json({ data: dbRecord, storage: "postgres" });
+
+    const record = {
+      id: `sec_${Date.now()}`,
+      propertyName: String(req.body.propertyName ?? ""),
+      companyName: String(req.body.companyName ?? ""),
+      contactName: String(req.body.contactName ?? ""),
+      contactPhone: String(req.body.contactPhone ?? ""),
+      contactEmail: String(req.body.contactEmail ?? ""),
+      notes: String(req.body.notes ?? ""),
+      instructions: String(req.body.instructions ?? ""),
+      createdAt: new Date().toISOString()
+    };
+    securityRecords.unshift(record);
+    await createAuditLog(req.user!.id, "CREATE_SECURITY", "property", record.propertyName).catch(() => undefined);
+    return res.status(201).json({ data: record, storage: "memory-fallback" });
+  } catch (error) {
+    return res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
 app.get("/api/units", authenticate, async (_req, res) => {
   const data = await listUnits().catch(() => units);
   res.json({ data });
@@ -186,6 +283,41 @@ app.post("/api/payments", authenticate, async (req, res) => {
   const dbPayment = await createDbPayment(payment).catch(() => null);
   if (!dbPayment) payments.push(payment);
   res.status(201).json({ data: dbPayment ?? payment, storage: dbPayment ? "postgres" : "memory-fallback", provider: { mpesa: "daraja-callback-pending", stripe: "payment-intent-ready" } });
+});
+
+app.get("/api/tenants", authenticate, requireRoles("caretaker", "owner", "super_admin"), async (req, res) => {
+  const data = await listTenants(req.user!).catch(() => users.filter((u) => u.role === "tenant"));
+  res.json({ data });
+});
+
+app.post("/api/tenants", authenticate, requireRoles("caretaker", "owner", "super_admin"), async (req, res) => {
+  const { name, email, phone, password = "RentFlow@2026" } = req.body;
+  if (!name || !email || !phone) return res.status(400).json({ error: "name, email, and phone are required" });
+  const passwordHash = await bcrypt.hash(password, 10);
+  try {
+    const user = await createUser({ name, email, phone, passwordHash, role: "tenant" });
+    await createAuditLog(req.user!.id, "CREATE_TENANT", "user", user.id).catch(() => undefined);
+    return res.status(201).json({ data: user, storage: "postgres" });
+  } catch (error) {
+    const user = { id: `usr_${Date.now()}`, name, email, phone, role: "tenant", mfaEnabled: false, verified: false };
+    users.unshift(user as any);
+    auditLogs.unshift({ id: `aud_${Date.now()}`, actorId: req.user!.id, action: "CREATE_TENANT", target: email, createdAt: new Date().toISOString() });
+    return res.status(201).json({ data: user, storage: "memory-fallback", warning: error instanceof Error ? error.message : "Database unavailable" });
+  }
+});
+
+app.put("/api/tenants/:tenantId", authenticate, requireRoles("caretaker", "owner", "super_admin"), async (req, res) => {
+  const tenantId = String(req.params.tenantId);
+  try {
+    const updated = await updateUser({ id: tenantId, name: req.body.name, email: req.body.email, phone: req.body.phone }).catch(() => null);
+    if (updated) return res.json({ data: updated, storage: "postgres" });
+    const idx = users.findIndex((u) => u.id === tenantId);
+    if (idx === -1) return res.status(404).json({ error: "Tenant not found" });
+    users[idx] = { ...users[idx], name: req.body.name ?? users[idx].name, email: req.body.email ?? users[idx].email, phone: req.body.phone ?? users[idx].phone } as any;
+    return res.json({ data: users[idx], storage: "memory-fallback" });
+  } catch (error) {
+    return res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
+  }
 });
 
 app.get("/api/payment-accounts", authenticate, requireRoles("owner", "super_admin"), async (_req, res) => {
