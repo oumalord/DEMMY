@@ -1,4 +1,5 @@
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+DROP SCHEMA public CASCADE;
+CREATE SCHEMA public;CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 CREATE TYPE user_role AS ENUM ('tenant', 'caretaker', 'owner', 'super_admin');
 CREATE TYPE unit_status AS ENUM ('occupied', 'vacant', 'maintenance');
@@ -73,11 +74,14 @@ CREATE TABLE units (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   property_id UUID NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
   label TEXT NOT NULL,
+  block TEXT,
   floor TEXT,
+  number TEXT,
   bedrooms INTEGER NOT NULL DEFAULT 1,
   rent_amount NUMERIC(12, 2) NOT NULL,
   deposit_amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
   status unit_status NOT NULL DEFAULT 'vacant',
+  tenant_id UUID REFERENCES users(id),
   meter_number TEXT,
   smart_gate_access_id TEXT,
   UNIQUE(property_id, label)

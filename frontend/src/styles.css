@@ -927,6 +927,30 @@ svg {
 .admin-actions button,
 .report-grid button,
 .action-grid button,
+.unit-card {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 12px;
+  background: rgba(148, 163, 184, .08);
+  border: 1px solid rgba(148, 163, 184, .16);
+}
+
+.unit-card-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.unit-card-fields.compact {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.unit-card-hint {
+  color: #94a3b8;
+  font-size: .76rem;
+}
+
 .property-row button {
   border-radius: 8px;
   color: #07111f;

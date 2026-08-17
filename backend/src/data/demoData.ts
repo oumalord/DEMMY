@@ -1,17 +1,21 @@
-import { ChatMessage, Lease, MaintenanceTicket, MessageThread, Payment, Property, Unit, User } from "../types.js";
+import { ChatMessage, Expense, Lease, MaintenanceTicket, MessageThread, Payment, Property, Unit, User } from "../types.js";
 
 export const users: User[] = [
-  { id: "usr_tenant_1", name: "Amina Otieno", email: "tenant@rentflow.app", phone: "+254700000101", role: "tenant", mfaEnabled: true, verified: true },
-  { id: "usr_caretaker_1", name: "Obwanda Lord", email: "obwandalordphick14@gmail.com", phone: "+254700000102", role: "caretaker", mfaEnabled: true, verified: true },
-  { id: "usr_owner_1", name: "Naomi Wanjiru", email: "owner@rentflow.app", phone: "+254700000103", role: "owner", mfaEnabled: true, verified: true },
-  { id: "usr_admin_1", name: "Amani Core Tech", email: "amanicoretech@gmail.com", phone: "+254700000104", role: "super_admin", mfaEnabled: true, verified: true }
+  { id: "usr_tenant_1", name: "Amina Otieno", email: "tenant@test.com", phone: "+254700000101", role: "tenant", mfaEnabled: true, verified: true },
+  { id: "usr_caretaker_1", name: "Obwanda Lord", email: "caretaker@test.com", phone: "+254700000102", role: "caretaker", mfaEnabled: true, verified: true },
+  { id: "usr_owner_1", name: "Naomi Wanjiru", email: "owner@test.com", phone: "+254700000103", role: "owner", mfaEnabled: true, verified: true },
+  { id: "usr_admin_1", name: "Amani Core Tech", email: "admin@test.com", phone: "+254700000104", role: "super_admin", mfaEnabled: true, verified: true },
+  { id: "usr_personal_owner_1", name: "Obwanda Lord", email: "obwandalordphick14@gmail.com", phone: "+254700000102", role: "caretaker", mfaEnabled: true, verified: true },
+  { id: "usr_personal_admin_1", name: "Amani Core Tech", email: "amanicoretech@gmail.com", phone: "+254700000104", role: "super_admin", mfaEnabled: true, verified: true }
 ];
 
 export const passwordHashByEmail: Record<string, string> = {
-  "tenant@rentflow.app": "$2a$10$BzADq5xZJyW.Rzsavp/3yeE7qDvgimN0OADyM6lZmbW9PpyuLJvGW",
-  "obwandalordphick14@gmail.com": "$2a$10$5E6fQBxTRFczJa1RnsqjreIHiTCtNTZwz979BvQLnOOaZLGYQ/XqW",
-  "owner@rentflow.app": "$2a$10$BzADq5xZJyW.Rzsavp/3yeE7qDvgimN0OADyM6lZmbW9PpyuLJvGW",
-  "amanicoretech@gmail.com": "$2a$10$5E6fQBxTRFczJa1RnsqjreIHiTCtNTZwz979BvQLnOOaZLGYQ/XqW"
+  "tenant@test.com": "$2a$10$bfNgZ6GN9cmD1/ncrl9Rt./1i2jRqc5DZ2eq.wyvHG0mVdCj3y4Ny",
+  "caretaker@test.com": "$2a$10$bfNgZ6GN9cmD1/ncrl9Rt./1i2jRqc5DZ2eq.wyvHG0mVdCj3y4Ny",
+  "owner@test.com": "$2a$10$bfNgZ6GN9cmD1/ncrl9Rt./1i2jRqc5DZ2eq.wyvHG0mVdCj3y4Ny",
+  "admin@test.com": "$2a$10$bfNgZ6GN9cmD1/ncrl9Rt./1i2jRqc5DZ2eq.wyvHG0mVdCj3y4Ny",
+  "obwandalordphick14@gmail.com": "$2a$10$bfNgZ6GN9cmD1/ncrl9Rt./1i2jRqc5DZ2eq.wyvHG0mVdCj3y4Ny",
+  "amanicoretech@gmail.com": "$2a$10$bfNgZ6GN9cmD1/ncrl9Rt./1i2jRqc5DZ2eq.wyvHG0mVdCj3y4Ny"
 };
 
 export const properties: Property[] = [
@@ -72,10 +76,10 @@ export const properties: Property[] = [
 ];
 
 export const units: Unit[] = [
-  { id: "unit_a12", propertyId: "prop_westlands", label: "A-12", status: "occupied", rent: 840, deposit: 840, leaseMonths: 12, tenantId: "usr_tenant_1" },
-  { id: "unit_b03", propertyId: "prop_westlands", label: "B-03", status: "occupied", rent: 760, deposit: 760, leaseMonths: 12 },
-  { id: "unit_c08", propertyId: "prop_kilimani", label: "C-08", status: "maintenance", rent: 1120, deposit: 1120, leaseMonths: 12 },
-  { id: "unit_d15", propertyId: "prop_nyali", label: "D-15", status: "vacant", rent: 690, deposit: 690, leaseMonths: 12 }
+  { id: "unit_a12", propertyId: "prop_westlands", label: "A-01-12", block: "A", floor: "01", number: "12", status: "occupied", rent: 840, deposit: 840, leaseMonths: 12, tenantId: "usr_tenant_1" },
+  { id: "unit_b03", propertyId: "prop_westlands", label: "B-01-03", block: "B", floor: "01", number: "03", status: "occupied", rent: 760, deposit: 760, leaseMonths: 12 },
+  { id: "unit_c08", propertyId: "prop_kilimani", label: "C-02-08", block: "C", floor: "02", number: "08", status: "maintenance", rent: 1120, deposit: 1120, leaseMonths: 12 },
+  { id: "unit_d15", propertyId: "prop_nyali", label: "D-03-15", block: "D", floor: "03", number: "15", status: "vacant", rent: 690, deposit: 690, leaseMonths: 12 }
 ];
 
 export const leases: Lease[] = [

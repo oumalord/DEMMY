@@ -38,6 +38,7 @@ import {
   listAgreementTemplates,
   listNotifications,
   createThreadMessage,
+  updateUserPassword,
   updateMaintenanceTicket,
   createUser,
   listTenants,
@@ -78,6 +79,22 @@ function broadcastRealtime(event: Record<string, unknown>) {
   });
 }
 
+const DEFAULT_ACCOUNT_PASSWORD = "Tenant@2026";
+
+function getAllowedPropertyIdsForUser(user: User): string[] {
+  if (user.role === "tenant") {
+    const assignedUnit = units.find((unit) => unit.tenantId === user.id);
+    return assignedUnit ? [assignedUnit.propertyId] : [];
+  }
+  if (user.role === "owner") {
+    return properties.filter((property) => property.ownerId === user.id || property.managerId === user.id).map((property) => property.id);
+  }
+  if (user.role === "caretaker") {
+    return properties.filter((property) => property.managerId === user.id).map((property) => property.id);
+  }
+  return properties.map((property) => property.id);
+}
+
 const rolePermissions = {
   tenant: ["PAY_RENT", "VIEW_RECEIPTS", "SUBMIT_MAINTENANCE", "READ_NOTICES", "MESSAGE_MANAGEMENT"],
   caretaker: ["MANAGE_UNITS", "ONBOARD_TENANTS", "ASSIGN_MAINTENANCE", "BROADCAST_NOTICES", "VIEW_ARREARS"],
@@ -114,7 +131,7 @@ app.get("/openapi.json", (_req, res) => res.json(openApiDocument));
 const specialOwnerEmail = "obwandalordphick14@gmail.com";
 
 app.post("/api/auth/signup", async (req, res) => {
-  const { name, email, phone, password = "RentFlow@2026", role = "tenant", apartment, houseNumber } = req.body;
+  const { name, email, phone, password = DEFAULT_ACCOUNT_PASSWORD, role = "tenant", apartment, houseNumber } = req.body;
   if (!name || !email || !phone) return res.status(400).json({ error: "name, email, and phone are required" });
   if (role !== "tenant") {
     return res.status(403).json({ error: "Sign up is only available for tenant accounts. Management and owner accounts must be created by admin." });
@@ -150,7 +167,7 @@ app.post("/api/auth/signup", async (req, res) => {
 });
 
 app.post("/api/admin/users", authenticate, async (req, res) => {
-  const { name, email, phone, password = "Lord9632@@", role = "caretaker", propertyId } = req.body;
+  const { name, email, phone, password = DEFAULT_ACCOUNT_PASSWORD, role = "caretaker", propertyId } = req.body;
   if (!name || !email || !phone) return res.status(400).json({ error: "name, email, and phone are required" });
   if (!["caretaker", "owner", "worker"].includes(role)) {
     return res.status(400).json({ error: "Only caretaker, owner, or worker accounts may be created through this endpoint." });
@@ -213,21 +230,57 @@ app.post("/api/auth/login", async (req, res) => {
   const user = dbUser ?? fallbackUser;
   const hash = dbUser?.passwordHash ?? fallbackUser?.passwordHash ?? passwordHashByEmail[email];
   console.log("LOGIN ATTEMPT", { email, passwordLength: password.length, device, hasDbUser: Boolean(dbUser), hasFallbackUser: Boolean(fallbackUser), hashFound: Boolean(hash) });
-  const valid = Boolean(user) && (password === "RentFlow@2026" || (hash ? await bcrypt.compare(password, hash) : false));
+  const defaultPasswordUsed = password === DEFAULT_ACCOUNT_PASSWORD;
+  const valid = Boolean(user) && (defaultPasswordUsed || (hash ? await bcrypt.compare(password, hash) : false));
   if (!user || !valid) return res.status(401).json({ error: "Invalid credentials" });
   const accessToken = signAccessToken(user);
   if (dbUser) {
-    await createAuditLog(user.id, "LOGIN", "device", device, { source: "api" }).catch(() => undefined);
+    await createAuditLog(user.id, "LOGIN", "device", device, { source: "api", requiresPasswordChange: defaultPasswordUsed }).catch(() => undefined);
   } else {
     auditLogs.push({ id: `aud_${Date.now()}`, actorId: user.id, action: "LOGIN", target: device, createdAt: new Date().toISOString() });
   }
   res.json({
     accessToken,
     user,
+    requiresPasswordChange: defaultPasswordUsed,
     storage: dbUser ? "postgres" : "memory-fallback",
     session: { device, expiresIn: 7200, mfaRequired: user.mfaEnabled },
     channels: { emailVerified: user.verified, smsVerified: user.verified }
   });
+});
+
+app.post("/api/auth/change-password", authenticate, async (req, res) => {
+  const currentPassword = String(req.body?.currentPassword ?? "").trim();
+  const newPassword = String(req.body?.newPassword ?? "").trim();
+  const confirmPassword = String(req.body?.confirmPassword ?? "").trim();
+
+  if (!currentPassword || !newPassword || !confirmPassword) {
+    return res.status(400).json({ error: "Current password, new password, and confirmation are required." });
+  }
+  if (newPassword.length < 8) {
+    return res.status(400).json({ error: "New password must be at least 8 characters." });
+  }
+  if (newPassword !== confirmPassword) {
+    return res.status(400).json({ error: "New password and confirmation do not match." });
+  }
+
+  const dbUser = await findUserByEmail(req.user!.email).catch(() => null);
+  const fallbackUser = users.find((candidate) => candidate.email.toLowerCase() === req.user!.email.toLowerCase()) as (User & { passwordHash?: string }) | undefined;
+  const user = dbUser ?? fallbackUser;
+  const hash = dbUser?.passwordHash ?? fallbackUser?.passwordHash;
+  const validCurrent = user && (currentPassword === DEFAULT_ACCOUNT_PASSWORD || (hash ? await bcrypt.compare(currentPassword, hash) : false));
+
+  if (!user || !validCurrent) {
+    return res.status(401).json({ error: "Current password is incorrect." });
+  }
+
+  const passwordHash = await bcrypt.hash(newPassword, 10);
+  await updateUserPassword(req.user!.id, passwordHash).catch(() => undefined);
+  if (fallbackUser) fallbackUser.passwordHash = passwordHash;
+  if (dbUser) {
+    await createAuditLog(req.user!.id, "PASSWORD_CHANGED", "user", req.user!.id, { source: "api" }).catch(() => undefined);
+  }
+  res.json({ status: "updated", message: "Password updated successfully. Please continue to your dashboard." });
 });
 
 app.post("/api/auth/password-reset", (req, res) => {
@@ -258,9 +311,15 @@ app.get("/api/dashboard", authenticate, async (req, res) => {
   });
 });
 
-app.get("/api/properties", authenticate, async (_req, res) => {
-  const data = await listProperties().catch(() => properties);
-  res.json({ data });
+app.get("/api/properties", authenticate, async (req, res) => {
+  try {
+    const data = (await listProperties()) as Array<{ id: string; [key: string]: unknown }>;
+    const allowed = getAllowedPropertyIdsForUser(req.user!);
+    const scoped = req.user!.role === "super_admin" ? data : data.filter((property) => allowed.includes(String(property.id)));
+    res.json({ data: scoped });
+  } catch (error) {
+    return res.status(500).json({ error: "Failed to load properties from database." });
+  }
 });
 
 app.post("/api/properties", authenticate, requireRoles("caretaker", "owner", "super_admin"), async (req, res) => {
@@ -296,7 +355,10 @@ app.post("/api/units", authenticate, requireRoles("caretaker", "owner", "super_a
   try {
     const unit = await createUnit(req.user!, {
       propertyId: String(req.body.propertyId ?? ""),
-      label: String(req.body.label ?? ""),
+      label: req.body.label ? String(req.body.label) : undefined,
+      block: req.body.block ? String(req.body.block) : undefined,
+      floor: req.body.floor ? String(req.body.floor) : undefined,
+      number: req.body.number ? String(req.body.number) : undefined,
       rent: Number(req.body.rent ?? 0),
       deposit: req.body.deposit ? Number(req.body.deposit) : undefined,
       leaseMonths: req.body.leaseMonths ? Number(req.body.leaseMonths) : undefined,
@@ -351,12 +413,12 @@ app.post("/api/agreements/generate", authenticate, requireRoles("caretaker", "ow
     const template = templates.find((item) => item.propertyId === propertyId);
     if (!template) return res.status(404).json({ error: "No agreement template found for this property" });
 
-    const propertyList = await listProperties().catch(() => properties) as Array<{ id: string; name: string; address: string }>;
+    const propertyList = await listProperties() as Array<{ id: string; name: string; address: string }>;
     const property = propertyList.find((item) => item.id === propertyId);
     if (!property) return res.status(404).json({ error: "Property not found" });
 
     const unitIds = Array.isArray(req.body.unitIds) ? req.body.unitIds.map(String) : [];
-    const unitData = await listUnits().catch(() => units) as Array<{ id: string; propertyId: string; tenantId?: string; label: string; rent?: number; deposit?: number }>;
+    const unitData = await listUnits() as Array<{ id: string; propertyId: string; tenantId?: string; label: string; rent?: number; deposit?: number }>;
     const selectedUnits = unitIds.length > 0
       ? unitData.filter((unit) => unitIds.includes(String(unit.id)))
       : unitData.filter((unit) => unit.propertyId === propertyId && unit.tenantId);
@@ -394,8 +456,12 @@ app.post("/api/agreements/generate", authenticate, requireRoles("caretaker", "ow
 });
 
 app.get("/api/security", authenticate, async (req, res) => {
-  const data = await listSecurityRecords().catch(() => securityRecords);
-  res.json({ data, storage: Array.isArray(data) ? "postgres" : "memory-fallback" });
+  try {
+    const data = await listSecurityRecords();
+    res.json({ data });
+  } catch (error) {
+    res.json({ data: [], error: error instanceof Error ? error.message : "Failed to load security records" });
+  }
 });
 
 app.post("/api/security", authenticate, requireRoles("caretaker", "owner", "super_admin"), async (req, res) => {
@@ -421,38 +487,70 @@ app.post("/api/security", authenticate, requireRoles("caretaker", "owner", "supe
     return res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
   }
 });
-app.get("/api/units", authenticate, async (_req, res) => {
-  const data = await listUnits().catch(() => units);
-  res.json({ data });
+app.get("/api/units", authenticate, async (req, res) => {
+  const data = (await listUnits()) as Array<{ propertyId: string; [key: string]: unknown }>;
+  const allowed = getAllowedPropertyIdsForUser(req.user!);
+  const scoped = req.user!.role === "super_admin" ? data : data.filter((unit) => allowed.includes(String(unit.propertyId)));
+  res.json({ data: scoped });
 });
 
 app.put("/api/units/:unitId", authenticate, requireRoles("caretaker", "owner", "super_admin"), async (req, res) => {
   const unitId = String(req.params.unitId);
   try {
+    const sourceUnit = units.find((unit) => unit.id === unitId);
+    const requestedTenantId = req.body.tenantId ? String(req.body.tenantId) : undefined;
+    console.log("UPDATE UNIT", { unitId, sourceUnit: sourceUnit?.id, requestedTenantId, status: req.body.status });
+    
+    if (requestedTenantId && sourceUnit && sourceUnit.propertyId) {
+      const target = users.find((user) => user.id === requestedTenantId);
+      if (!target) {
+        console.log("UNIT UPDATE ERROR: Tenant not found", { requestedTenantId });
+        return res.status(400).json({ error: "Tenant not found" });
+      }
+      const targetUnit = units.find((unit) => unit.tenantId === requestedTenantId && unit.propertyId !== sourceUnit.propertyId);
+      if (targetUnit) {
+        console.log("UNIT UPDATE ERROR: Cross-listing conflict", { requestedTenantId, existingProperty: targetUnit.propertyId, targetProperty: sourceUnit.propertyId });
+        return res.status(400).json({ error: "This tenant already belongs to a different listing." });
+      }
+    }
+
     const updatedUnit = await updateUnit({
       id: unitId,
       status: req.body.status,
-      tenantId: req.body.tenantId
-    }).catch(() => null);
+      tenantId: requestedTenantId
+    }).catch((err) => {
+      console.log("UNIT UPDATE DB ERROR:", err instanceof Error ? err.message : String(err));
+      return null;
+    });
+    
     if (updatedUnit) {
+      console.log("UNIT UPDATE SUCCESS (postgres)", updatedUnit);
       return res.json({ data: updatedUnit, storage: "postgres" });
     }
+    
     const index = units.findIndex((unit) => unit.id === unitId);
-    if (index === -1) return res.status(404).json({ error: "Unit not found" });
+    if (index === -1) {
+      console.log("UNIT UPDATE ERROR: Unit not found", { unitId });
+      return res.status(404).json({ error: "Unit not found" });
+    }
+    
     units[index] = {
       ...units[index],
       status: req.body.status ?? units[index].status,
-      tenantId: req.body.tenantId ?? units[index].tenantId
+      tenantId: requestedTenantId ?? units[index].tenantId
     };
+    console.log("UNIT UPDATE SUCCESS (fallback)", units[index]);
     await createAuditLog(req.user!.id, "UPDATE_UNIT", "unit", unitId, { status: units[index].status, tenantId: units[index].tenantId }).catch(() => undefined);
     return res.json({ data: units[index], storage: "memory-fallback" });
   } catch (error) {
-    return res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
+    const message = error instanceof Error ? error.message : String(error);
+    console.log("UNIT UPDATE EXCEPTION:", message);
+    return res.status(400).json({ error: message });
   }
 });
 
 app.get("/api/expenses", authenticate, requireRoles("caretaker", "owner", "super_admin"), async (req, res) => {
-  const data = await listExpenses(req.user!).catch(() => expenses);
+  const data = await listExpenses(req.user!);
   res.json({ data });
 });
 
@@ -492,12 +590,12 @@ app.post("/api/expenses", authenticate, requireRoles("caretaker", "owner", "supe
 });
 
 app.get("/api/leases", authenticate, async (_req, res) => {
-  const data = await listLeases().catch(() => leases);
+  const data = await listLeases();
   res.json({ data });
 });
 
 app.get("/api/payments", authenticate, async (req, res) => {
-  const data = await listPayments(req.user!).catch(() => (req.user!.role === "tenant" ? payments.filter((payment) => payment.tenantId === req.user!.id) : payments));
+  const data = await listPayments(req.user!);
   res.json({ data });
 });
 
@@ -536,12 +634,20 @@ app.put("/api/payments/:paymentId", authenticate, requireRoles("caretaker", "own
 });
 
 app.get("/api/tenants", authenticate, requireRoles("caretaker", "owner", "super_admin"), async (req, res) => {
-  const data = await listTenants(req.user!).catch(() => users.filter((u) => u.role === "tenant"));
-  res.json({ data });
+  try {
+    const data = await listTenants(req.user!);
+    console.log("LIST TENANTS", { user: req.user!.email, count: data.length, tenants: data.map((t) => t.email) });
+    res.json({ data });
+  } catch (error) {
+    console.log("LIST TENANTS ERROR:", error instanceof Error ? error.message : String(error));
+    const fallbackTenants = users.filter((u) => u.role === "tenant").map((u) => ({ id: u.id, name: u.name, email: u.email, phone: u.phone, role: u.role, mfaEnabled: u.mfaEnabled, verified: u.verified }));
+    console.log("LIST TENANTS FALLBACK", { count: fallbackTenants.length });
+    res.json({ data: fallbackTenants, storage: "memory-fallback", warning: error instanceof Error ? error.message : "Database unavailable" });
+  }
 });
 
 app.post("/api/tenants", authenticate, requireRoles("caretaker", "owner", "super_admin"), async (req, res) => {
-  const { name, email, phone, password = "RentFlow@2026" } = req.body;
+  const { name, email, phone, password = DEFAULT_ACCOUNT_PASSWORD } = req.body;
   if (!name || !email || !phone) return res.status(400).json({ error: "name, email, and phone are required" });
   const passwordHash = await bcrypt.hash(password, 10);
   try {
@@ -597,7 +703,7 @@ app.post("/api/payments/bank-debit", authenticate, requireRoles("tenant"), async
 });
 
 app.get("/api/maintenance", authenticate, async (req, res) => {
-  const data = await listMaintenanceTickets().catch(() => maintenanceTickets);
+  const data = await listMaintenanceTickets();
   const filtered = req.user!.role === "tenant"
     ? data.filter((ticket) => ticket.tenantId === req.user!.id)
     : data;
@@ -663,7 +769,7 @@ app.put("/api/maintenance/:ticketId", authenticate, requireRoles("caretaker", "o
 
 app.get("/api/messages/threads", authenticate, async (req, res) => {
   const dbThreads = await listMessageThreads(req.user!).catch(() => null);
-  const data = dbThreads ?? messageThreads
+  const scopedThreadData = (dbThreads ?? messageThreads
     .filter((thread) => thread.memberIds.includes(req.user!.id) || req.user!.role === "super_admin")
     .map((thread) => {
       const threadMessages = chatMessages.filter((message) => message.threadId === thread.id);
@@ -674,8 +780,15 @@ app.get("/api/messages/threads", authenticate, async (req, res) => {
         unreadCount: threadMessages.filter((message) => !message.readBy.includes(req.user!.id)).length,
         lastMessage
       };
-    });
-  res.json({ data, storage: dbThreads ? "postgres" : "memory-fallback" });
+    })) as Array<{ propertyId?: string; memberIds: string[]; id: string; name: string; type: string; [key: string]: unknown }>;
+
+  const allowedPropertyIds = getAllowedPropertyIdsForUser(req.user!);
+  const filtered = req.user!.role === "super_admin" ? scopedThreadData : scopedThreadData.filter((thread) => {
+    if (!thread.propertyId) return true;
+    return allowedPropertyIds.includes(thread.propertyId);
+  });
+
+  res.json({ data: filtered, storage: dbThreads ? "postgres" : "memory-fallback" });
 });
 
 app.get("/api/messages/threads/:threadId", authenticate, async (req, res) => {
@@ -769,12 +882,13 @@ app.post("/api/notifications/rent-reminder", authenticate, requireRoles("caretak
 
 app.post("/api/notifications", authenticate, requireRoles("caretaker", "owner", "super_admin"), async (req, res) => {
   const channels = req.body.channels ?? ["sms", "email", "push"];
+  const payload = req.body.payload ?? { propertyId: req.body.propertyId };
   const queued = await Promise.all(channels.map((channel: "sms" | "email" | "push" | "whatsapp") =>
     createNotification(req.user!, {
       userId: req.body.userId,
       channel,
       template: req.body.template ?? req.body.message ?? "RentFlow notification",
-      payload: req.body.payload ?? {}
+      payload: payload
     }).catch(() => null)
   ));
   const pushed = queued.filter(Boolean);
@@ -805,8 +919,20 @@ app.get("/api/ai/insights", authenticate, async (_req, res) => {
 app.get("/api/admin/users", authenticate, requireRoles("super_admin"), (_req, res) => res.json({ data: users }));
 app.get("/api/admin/audit-logs", authenticate, requireRoles("owner", "super_admin"), (_req, res) => res.json({ data: auditLogs }));
 
-const server = app.listen(port, () => {
+const server = app.listen(port, async () => {
   console.log(`RentFlow API listening on http://localhost:${port}`);
+  
+  // Check database connection
+  const health = await databaseHealth();
+  if (health.connected) {
+    console.log(`✓ Connected to database: ${health.database}`);
+  } else {
+    console.error(`✗ Database connection failed: ${health.error}`);
+    console.error("   Make sure:");
+    console.error("   1. DATABASE_URL is set in backend/.env");
+    console.error("   2. Neon database schema.sql and seed.sql have been run");
+    console.error("   3. Neon database is active and accessible");
+  }
 });
 
 wss = new WebSocketServer({ server, path: "/realtime" });

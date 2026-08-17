@@ -1,6 +1,6 @@
 # RentFlow
 
-RentFlow is a modern full-stack rent management platform for tenants, caretakers/property managers, owners/landlords, and super admins. It includes a responsive SaaS dashboard, REST API, PostgreSQL schema, AI service stubs, Swagger documentation, PWA/mobile support, and Docker deployment configuration.
+RentFlow is a modern full-stack rent management platform for tenants, management/property managers, owners/landlords, and super admins. It includes a responsive SaaS dashboard, REST API, PostgreSQL schema, AI service stubs, Swagger documentation, PWA/mobile support, and Docker deployment configuration.
 
 ## Stack
 

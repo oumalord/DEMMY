@@ -86,6 +86,19 @@ export async function updateUser(input: { id: string; name?: string; email?: str
   };
 }
 
+export async function updateUserPassword(userId: string, passwordHash: string) {
+  const result = await query(
+    `update users
+     set password_hash = $2,
+         updated_at = now()
+     where id = $1
+     returning id, email`,
+    [userId, passwordHash]
+  );
+  if (!result.rows[0]) throw new Error("User not found");
+  return result.rows[0];
+}
+
 export async function createUser(input: {
   name: string;
   email: string;
@@ -206,7 +219,9 @@ export async function listUnits() {
     `select id,
             property_id as "propertyId",
             label,
+            block,
             floor,
+            number,
             bedrooms,
             rent_amount::float as rent,
             deposit_amount::float as deposit,
@@ -220,23 +235,32 @@ export async function listUnits() {
 
 export async function createUnit(user: User, input: {
   propertyId: string;
-  label: string;
+  label?: string;
+  block?: string;
+  floor?: string;
+  number?: string;
   rent: number;
   deposit?: number;
   leaseMonths?: number;
   status?: string;
 }) {
+  // Construct label from block-floor-number if not provided
+  const label = input.label || [input.block, input.floor, input.number].filter(Boolean).join("-") || "";
+  
   const result = await query(
-    `insert into units (property_id, label, rent_amount, deposit_amount, status)
-     values ($1,$2,$3,$4,$5)
+    `insert into units (property_id, label, block, floor, number, rent_amount, deposit_amount, status)
+     values ($1,$2,$3,$4,$5,$6,$7,$8)
      returning id,
                property_id as "propertyId",
                label,
+               block,
+               floor,
+               number,
                status,
                rent_amount::float as rent,
                deposit_amount::float as deposit,
                tenant_id as "tenantId"`,
-    [input.propertyId, input.label, input.rent, input.deposit ?? 0, input.status ?? "vacant"]
+    [input.propertyId, label, input.block ?? null, input.floor ?? null, input.number ?? null, input.rent, input.deposit ?? 0, input.status ?? "vacant"]
   );
   return result.rows[0];
 }
@@ -258,6 +282,9 @@ export async function updateUnit(input: {
      returning id,
                property_id as "propertyId",
                label,
+               block,
+               floor,
+               number,
                status,
                rent_amount::float as rent,
                deposit_amount::float as deposit,

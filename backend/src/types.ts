@@ -63,6 +63,9 @@ export interface Unit {
   id: string;
   propertyId: string;
   label: string;
+  block?: string;
+  floor?: string;
+  number?: string;
   status: "occupied" | "vacant" | "maintenance";
   rent: number;
   deposit?: number;

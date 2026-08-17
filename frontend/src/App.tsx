@@ -94,6 +94,9 @@ interface ServerUnit {
   id: string;
   propertyId: string;
   label: string;
+  block?: string;
+  floor?: string;
+  number?: string;
   status: string;
   rent: number;
   deposit?: number;
@@ -169,6 +172,7 @@ interface ServerThread {
   muted: boolean;
   memberCount?: number;
   unreadCount?: number;
+  scope?: string;
   lastMessage?: { senderName: string; body: string; createdAt: string };
 }
 
@@ -494,19 +498,23 @@ function MobileRentFlowHome({ role, currency }: { role: Role; currency: Currency
   );
 }
 
-function MessagingCenter({ role, threads, messages, notifications, onLoadThread, onSendMessage, onSendPushAlert }: { role: Role; threads: ServerThread[]; messages: AppChatMessage[]; notifications: ServerNotification[]; onLoadThread: (threadId: string) => void; onSendMessage: (threadId: string, body: string, attachmentUrls?: string[]) => void; onSendPushAlert: (message: string) => Promise<void> }) {
+function MessagingCenter({ role, threads, messages, notifications, onLoadThread, onSendMessage, onSendPushAlert }: { role: Role; threads: ServerThread[]; messages: AppChatMessage[]; notifications: ServerNotification[]; onLoadThread: (threadId: string) => void; onSendMessage: (threadId: string, body: string, attachmentUrls?: string[]) => void; onSendPushAlert: (message: string, propertyId?: string) => Promise<void> }) {
   const [activeThreadId, setActiveThreadId] = useState(threads[0]?.id ?? "");
   const [draft, setDraft] = useState("");
   const [attachmentUrls, setAttachmentUrls] = useState<string[]>([]);
   const [noticeStatus, setNoticeStatus] = useState("Rent reminder is scheduled for the 1st of every month, due by the 5th.");
   const [threadFilter, setThreadFilter] = useState("all");
+  const [selectedPropertyId, setSelectedPropertyId] = useState("");
+  const [pushAlertLoading, setPushAlertLoading] = useState(false);
+  const [pushAlertMessage, setPushAlertMessage] = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const filteredThreads = useMemo(() => {
-    if (threadFilter === "all") return threads;
-    if (threadFilter === "tenant") return threads.filter((thread) => thread.type === "property_group" || thread.type === "support");
-    return threads.filter((thread) => thread.type === "management" || thread.type === "announcement");
-  }, [threadFilter, threads]);
+    const scopedThreads = selectedPropertyId ? threads.filter((thread) => !thread.propertyId || thread.propertyId === selectedPropertyId) : threads;
+    if (threadFilter === "all") return scopedThreads;
+    if (threadFilter === "tenant") return scopedThreads.filter((thread) => thread.type === "property_group" || thread.type === "support");
+    return scopedThreads.filter((thread) => thread.type === "management" || thread.type === "announcement");
+  }, [selectedPropertyId, threadFilter, threads]);
 
   const activeThread = filteredThreads.find((thread) => thread.id === activeThreadId) ?? filteredThreads[0] ?? threads[0] ?? { id: "", name: "General", type: "support", memberIds: [], muted: false };
   const activeMessages = messages.filter((message) => message.threadId === activeThread.id);
@@ -557,6 +565,18 @@ function MessagingCenter({ role, threads, messages, notifications, onLoadThread,
         </div>
         {role !== "Tenant" && (
           <div className="chat-filter">
+            <label className="listing-filter-label">
+              Listing
+              <select value={selectedPropertyId} onChange={(event) => setSelectedPropertyId(event.target.value)}>
+                <option value="">All listings</option>
+                {threads
+                  .map((thread) => thread.propertyId)
+                  .filter((propertyId, index, values) => propertyId && values.indexOf(propertyId) === index)
+                  .map((propertyId) => (
+                    <option key={propertyId} value={propertyId}>{propertyId}</option>
+                  ))}
+              </select>
+            </label>
             <button className={threadFilter === "all" ? "selected" : ""} onClick={() => setThreadFilter("all")}>All</button>
             <button className={threadFilter === "tenant" ? "selected" : ""} onClick={() => setThreadFilter("tenant")}>Tenant</button>
             <button className={threadFilter === "owner" ? "selected" : ""} onClick={() => setThreadFilter("owner")}>Owner</button>
@@ -640,7 +660,37 @@ function MessagingCenter({ role, threads, messages, notifications, onLoadThread,
             <div><ShieldCheck /> Moderated announcements</div>
             <div><Bell /> SMS fallback for urgent alerts</div>
             <div><FileText /> Chat history stored in audit logs</div>
-            <button className="secondary-action" onClick={() => onSendPushAlert("Urgent property alert: check your app for updates.")}>Send push alert</button>
+            <div style={{ display: "flex", gap: "8px", marginTop: "12px", alignItems: "center", flexWrap: "wrap" }}>
+              <input
+                type="text"
+                value={pushAlertMessage}
+                onChange={(e) => setPushAlertMessage(e.target.value)}
+                placeholder="Alert message..."
+                style={{ flex: 1, minWidth: "100px", padding: "8px", borderRadius: "4px", border: "1px solid rgba(148,163,184,.3)", fontSize: "13px" }}
+              />
+              <button
+                className="secondary-action"
+                onClick={async () => {
+                  if (!pushAlertMessage.trim()) {
+                    setNoticeStatus("Enter an alert message first.");
+                    return;
+                  }
+                  setPushAlertLoading(true);
+                  try {
+                    await onSendPushAlert(pushAlertMessage, selectedPropertyId || undefined);
+                    setNoticeStatus(`✓ Push alert sent to ${selectedPropertyId ? "the selected listing" : "all active listings"}: "${pushAlertMessage}"`);
+                    setPushAlertMessage("");
+                  } catch (error) {
+                    setNoticeStatus("Failed to send alert. Try again.");
+                  } finally {
+                    setPushAlertLoading(false);
+                  }
+                }}
+                disabled={pushAlertLoading}
+              >
+                {pushAlertLoading ? "Sending..." : "Alert"}
+              </button>
+            </div>
           </>
         )}
         <div className="notification-summary"><Bell /> {noticeStatus}</div>
@@ -723,7 +773,7 @@ function DashboardSnapshot({ role }: { role: Role }) {
 
 type OverviewView = "dashboard" | "insights";
 
-function OverviewPage({ role, onNavigate, currency, onSendPushAlert }: { role: Role; onNavigate: (tab: Tab) => void; currency: Currency; onSendPushAlert: (message: string) => void }) {
+function OverviewPage({ role, onNavigate, currency, onSendPushAlert }: { role: Role; onNavigate: (tab: Tab) => void; currency: Currency; onSendPushAlert: (message: string, propertyId?: string) => void | Promise<void> }) {
   const [view, setView] = useState<OverviewView>("dashboard");
   const [visitorQr, setVisitorQr] = useState({ code: "", expiresAt: "" });
   const stats = roleStats[role];
@@ -942,8 +992,8 @@ function PropertiesPage({
     templateFileName: "lease-agreement-template.docx",
     templateText: "This lease agreement is between {{tenantName}} and {{propertyName}} for unit {{unitLabel}} at {{propertyAddress}} with monthly rent of {{rentAmount}}."
   });
-  const [unitsForm, setUnitsForm] = useState<Array<{ label: string; rent: string; deposit: string; leaseMonths: string; status: string }>>([
-    { label: "", rent: "", deposit: "", leaseMonths: "12", status: "vacant" }
+  const [unitsForm, setUnitsForm] = useState<Array<{ block: string; floor: string; number: string; rent: string; deposit: string; leaseMonths: string; status: string }>>([
+    { block: "", floor: "", number: "", rent: "", deposit: "", leaseMonths: "12", status: "vacant" }
   ]);
   const [listingStatus, setListingStatus] = useState("");
   const [leaseStatus, setLeaseStatus] = useState("");
@@ -956,6 +1006,8 @@ function PropertiesPage({
   const [tenantStatus, setTenantStatus] = useState("");
   const [unitStatus, setUnitStatus] = useState("");
   const [expenseStatus, setExpenseStatus] = useState("");
+  const [managingPropertyId, setManagingPropertyId] = useState<string | null>(null);
+  const [unitsManagementStatus, setUnitsManagementStatus] = useState("");
 
   useEffect(() => {
     const propertyUnits = units.filter((unit) => unit.propertyId === selectedPropertyId);
@@ -982,7 +1034,7 @@ function PropertiesPage({
     leases.forEach((lease) => {
       downloadFile(lease.fileName, lease.renderedText);
     });
-    setLeaseStatus(`Generated and downloaded ${leases.length} lease document${leases.length === 1 ? "" : "s"}.`);
+    setLeaseStatus(`✓ Generated and downloaded ${leases.length} lease document${leases.length === 1 ? "" : "s"}.`);
   }
 
   async function onboardTenant() {
@@ -995,7 +1047,7 @@ function PropertiesPage({
       setTenantStatus("Tenant onboarding failed. Check the form and try again.");
       return;
     }
-    setTenantStatus(`Tenant ${tenant.name} onboarded.`);
+    setTenantStatus(`✓ Tenant ${tenant.name} onboarded successfully and is ready to receive lease documents.`);
     setTenantForm({ name: "", email: "", phone: "" });
   }
 
@@ -1009,7 +1061,7 @@ function PropertiesPage({
       setUnitStatus("Failed to update unit status or assignment.");
       return;
     }
-    setUnitStatus(`Unit ${updated.label} updated successfully.`);
+    setUnitStatus(`✓ Unit ${updated.label} updated successfully to ${updated.status} status.`);
   }
 
   async function recordExpenseEntry() {
@@ -1033,8 +1085,8 @@ function PropertiesPage({
       setExpenseStatus("Expense recording failed. Try again.");
       return;
     }
-    setExpenseStatus(`Recorded ${expense.category.toLowerCase()} expense for ${expense.propertyName || expense.propertyId}.`);
-    setExpenseForm({ ...expenseForm, description: "", amount: "", receiptUrl: "" });
+    setExpenseStatus(`✓ Recorded ${expense.category.toLowerCase()} expense for ${expense.propertyName || expense.propertyId}. Amount: ${formatMoney(amount, currency)}`);
+    setExpenseForm({ propertyId: expenseForm.propertyId, category: "Maintenance", description: "", amount: "", receiptUrl: "" });
   }
 
   const selectedProperty = properties.find((property) => property.id === selectedPropertyId);
@@ -1044,7 +1096,7 @@ function PropertiesPage({
   const vacantUnits = selectedPropertyUnits.filter((unit) => unit.status === "vacant").length;
 
   async function addUnitRow() {
-    setUnitsForm((current) => [...current, { label: "", rent: "", deposit: "", leaseMonths: "12", status: "vacant" }]);
+    setUnitsForm((current) => [...current, { block: "", floor: "", number: "", rent: "", deposit: "", leaseMonths: "12", status: "vacant" }]);
   }
 
   async function createListing() {
@@ -1078,19 +1130,42 @@ function PropertiesPage({
         templateText: listingForm.templateText
       });
       for (const unit of unitsForm) {
-        if (!unit.label || !unit.rent) continue;
+        if (!unit.rent || (!unit.block && !unit.floor && !unit.number)) {
+          if (unit.rent) {
+            await onCreateUnit({
+              propertyId: property.id,
+              block: unit.block || undefined,
+              floor: unit.floor || undefined,
+              number: unit.number || undefined,
+              rent: Number(unit.rent),
+              deposit: Number(unit.deposit || 0),
+              leaseMonths: Number(unit.leaseMonths || 12),
+              status: unit.status
+            });
+          }
+          continue;
+        }
         await onCreateUnit({
           propertyId: property.id,
-          label: unit.label,
+          block: unit.block || undefined,
+          floor: unit.floor || undefined,
+          number: unit.number || undefined,
           rent: Number(unit.rent),
           deposit: Number(unit.deposit || 0),
           leaseMonths: Number(unit.leaseMonths || 12),
           status: unit.status
         });
       }
-      setListingStatus(`Listing created for ${property.name}. ${unitsForm.length} units added.`);
-      setListingForm({ ...listingForm, name: "", address: "", street: "", location: "", electricityPrice: "", garbagePrice: "", waterPrice: "", contractFee: "", managementQuote: "", valuation: "" });
-      setUnitsForm([{ label: "", rent: "", deposit: "", leaseMonths: "12", status: "vacant" }]);
+      setListingStatus(`✓ Listing created for ${property.name}. ${unitsForm.filter((u) => (u.block || u.floor || u.number) && u.rent).length} units added.`);
+      setListingForm({
+        name: "", address: "", street: "", location: "", electricityPrice: "", garbagePrice: "", waterPrice: "",
+        propertyType: "Apartments", contactName: "", contactPhone: "", contactEmail: "", contractFee: "", managementQuote: "",
+        valuation: "", templateName: "Standard lease agreement", templateFileName: "lease-agreement-template.docx",
+        templateText: "This lease agreement is between {{tenantName}} and {{propertyName}} for unit {{unitLabel}} at {{propertyAddress}} with monthly rent of {{rentAmount}}."
+      });
+      setUnitsForm([{ block: "", floor: "", number: "", rent: "", deposit: "", leaseMonths: "12", status: "vacant" }]);
+      setManagingPropertyId(property.id);
+      setUnitsManagementStatus(`✓ Property created! Now add units to ${property.name} using the form below.`);
     } catch (error) {
       setListingStatus(error instanceof Error ? error.message : "Create listing failed.");
     }
@@ -1247,7 +1322,7 @@ function PropertiesPage({
                 <span>Contract fee: {property.contractFee ? `${formatMoney(property.contractFee, currency)}` : "N/A"}</span>
                 <span>Management: {property.managementQuote ?? "TBD"}</span>
               </div>
-              <button className={role === "Tenant" ? "locked-action" : ""}>{role === "Tenant" ? "View only" : "Manage"}</button>
+              <button className={role === "Tenant" ? "locked-action" : ""} onClick={() => !role.includes("Tenant") && setManagingPropertyId(property.id)}>{role === "Tenant" ? "View only" : "Manage"}</button>
             </div>
           ))}
           {role !== "Tenant" && selectedProperty && (
@@ -1267,6 +1342,83 @@ function PropertiesPage({
           )}
         </div>
       </article>
+
+      {role !== "Tenant" && managingPropertyId && (
+        <article className="panel form-panel units-management-panel">
+          <div className="panel-heading"><div><span>Add units</span><h3>Create units for {properties.find((p) => p.id === managingPropertyId)?.name}</h3></div></div>
+          <div className="unit-grid">
+            {unitsForm.map((unit, index) => (
+              <div key={index} className="unit-card">
+                <label>Block<input value={unit.block} onChange={(event) => {
+                    const next = [...unitsForm];
+                    next[index].block = event.target.value;
+                    setUnitsForm(next);
+                  }} placeholder="A" /></label>
+                <label>Floor<input value={unit.floor} onChange={(event) => {
+                    const next = [...unitsForm];
+                    next[index].floor = event.target.value;
+                    setUnitsForm(next);
+                  }} placeholder="01" /></label>
+                <label>Number<input value={unit.number} onChange={(event) => {
+                    const next = [...unitsForm];
+                    next[index].number = event.target.value;
+                    setUnitsForm(next);
+                  }} placeholder="12" /></label>
+                <label>Rent amount<input value={unit.rent} onChange={(event) => {
+                    const next = [...unitsForm];
+                    next[index].rent = event.target.value;
+                    setUnitsForm(next);
+                  }} placeholder="840" /></label>
+                <label>Deposit<input value={unit.deposit} onChange={(event) => {
+                    const next = [...unitsForm];
+                    next[index].deposit = event.target.value;
+                    setUnitsForm(next);
+                  }} placeholder="840" /></label>
+                <label>Lease months<input value={unit.leaseMonths} onChange={(event) => {
+                    const next = [...unitsForm];
+                    next[index].leaseMonths = event.target.value;
+                    setUnitsForm(next);
+                  }} placeholder="12" /></label>
+                <label>Status<select value={unit.status} onChange={(event) => {
+                    const next = [...unitsForm];
+                    next[index].status = event.target.value;
+                    setUnitsForm(next);
+                  }}>
+                    <option value="vacant">Vacant</option>
+                    <option value="occupied">Occupied</option>
+                    <option value="maintenance">Maintenance</option>
+                  </select></label>
+              </div>
+            ))}
+          </div>
+          <button className="secondary-action" onClick={addUnitRow}>Add another unit</button>
+          <button className="primary-action" onClick={async () => {
+            if (!managingPropertyId) return;
+            try {
+              for (const unit of unitsForm) {
+                if (!unit.rent || (!unit.block && !unit.floor && !unit.number)) continue;
+                await onCreateUnit({
+                  propertyId: managingPropertyId,
+                  block: unit.block || undefined,
+                  floor: unit.floor || undefined,
+                  number: unit.number || undefined,
+                  rent: Number(unit.rent),
+                  deposit: Number(unit.deposit || 0),
+                  leaseMonths: Number(unit.leaseMonths || 12),
+                  status: unit.status
+                });
+              }
+              setUnitsManagementStatus(`✓ ${unitsForm.filter((u) => (u.block || u.floor || u.number) && u.rent).length} units added successfully.`);
+              setUnitsForm([{ block: "", floor: "", number: "", rent: "", deposit: "", leaseMonths: "12", status: "vacant" }]);
+              setManagingPropertyId(null);
+            } catch (error) {
+              setUnitsManagementStatus(error instanceof Error ? error.message : "Failed to add units");
+            }
+          }}>Save units</button>
+          <button className="secondary-action" onClick={() => setManagingPropertyId(null)}>Cancel</button>
+          {unitsManagementStatus && <p className="status-note">{unitsManagementStatus}</p>}
+        </article>
+      )}
 
       {role !== "Tenant" && (
         <article className="panel form-panel">
@@ -1301,11 +1453,21 @@ function PropertiesPage({
           <div className="unit-grid">
             {unitsForm.map((unit, index) => (
               <div key={index} className="unit-card">
-                <label>Room number<label><input value={unit.label} onChange={(event) => {
+                <label>Block<input value={unit.block} onChange={(event) => {
                     const next = [...unitsForm];
-                    next[index].label = event.target.value;
+                    next[index].block = event.target.value;
                     setUnitsForm(next);
-                  }} placeholder="A-01" /></label></label>
+                  }} placeholder="A" /></label>
+                <label>Floor<input value={unit.floor} onChange={(event) => {
+                    const next = [...unitsForm];
+                    next[index].floor = event.target.value;
+                    setUnitsForm(next);
+                  }} placeholder="01" /></label>
+                <label>Number<input value={unit.number} onChange={(event) => {
+                    const next = [...unitsForm];
+                    next[index].number = event.target.value;
+                    setUnitsForm(next);
+                  }} placeholder="12" /></label>
                 <label>Rent amount<input value={unit.rent} onChange={(event) => {
                     const next = [...unitsForm];
                     next[index].rent = event.target.value;
@@ -1436,7 +1598,108 @@ function PaymentsPage({ role, currency, payments, onMakePayment, onApprovePaymen
                 {role !== "Tenant" && item.status !== "approved" ? (
                   <button className="secondary-action" onClick={() => approvePayment(item.id)}>Approve</button>
                 ) : null}
-                <button className="secondary-action" onClick={() => downloadFile(`receipt-${item.receiptNumber}.txt`, `Receipt: ${item.receiptNumber}\nAmount: ${formatMoney(item.amount, currency)}\nMethod: ${item.method}\nStatus: ${item.status}\nUnit: ${item.unitId ?? "N/A"}\nDate: ${new Date().toLocaleString()}`)}>Download receipt</button>
+                <button className="secondary-action" onClick={() => {
+                  const receiptHTML = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Receipt ${item.receiptNumber}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif; background: #f3f4f6; padding: 20px; }
+    .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.07); overflow: hidden; }
+    .header { background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white; padding: 40px 30px; text-align: center; }
+    .logo { font-size: 32px; font-weight: 800; letter-spacing: -1px; margin-bottom: 10px; }
+    .receipt-label { font-size: 12px; text-transform: uppercase; letter-spacing: 2px; opacity: 0.9; }
+    .content { padding: 40px 30px; }
+    .section { margin-bottom: 30px; }
+    .section-title { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #6b7280; font-weight: 700; margin-bottom: 15px; }
+    .row { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #e5e7eb; font-size: 14px; }
+    .row:last-child { border-bottom: none; }
+    .label { color: #6b7280; font-weight: 500; }
+    .value { color: #1f2937; font-weight: 600; }
+    .highlight { background: #f0f9ff; border-radius: 8px; padding: 20px; margin: 20px 0; }
+    .amount-display { display: flex; justify-content: space-between; align-items: baseline; font-size: 24px; font-weight: 800; color: #0369a1; }
+    .amount-label { font-size: 12px; color: #6b7280; text-transform: uppercase; letter-spacing: 1px; }
+    .badge { display: inline-block; padding: 6px 12px; border-radius: 999px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+    .badge.paid { background: #d1fae5; color: #065f46; }
+    .badge.partial { background: #fef3c7; color: #92400e; }
+    .badge.pending { background: #fee2e2; color: #7f1d1d; }
+    .footer { background: #f9fafb; padding: 20px 30px; text-align: center; font-size: 12px; color: #6b7280; border-top: 1px solid #e5e7eb; }
+    .security-note { font-size: 11px; color: #059669; font-style: italic; margin-top: 10px; }
+    @media print {
+      body { background: white; padding: 0; }
+      .container { box-shadow: none; border-radius: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="logo">RentFlow</div>
+      <div class="receipt-label">Payment Receipt</div>
+    </div>
+    <div class="content">
+      <div class="section">
+        <div class="section-title">Receipt Information</div>
+        <div class="row">
+          <span class="label">Receipt Number</span>
+          <span class="value">#${item.receiptNumber}</span>
+        </div>
+        <div class="row">
+          <span class="label">Date</span>
+          <span class="value">${new Date().toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}</span>
+        </div>
+        <div class="row">
+          <span class="label">Time</span>
+          <span class="value">${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</span>
+        </div>
+      </div>
+      <div class="section">
+        <div class="section-title">Payment Details</div>
+        <div class="row">
+          <span class="label">Unit</span>
+          <span class="value">${item.unitId ?? 'N/A'}</span>
+        </div>
+        <div class="row">
+          <span class="label">Payment Method</span>
+          <span class="value" style="text-transform: uppercase; letter-spacing: 0.5px;">${item.method}</span>
+        </div>
+        <div class="row">
+          <span class="label">Status</span>
+          <span class="badge ${item.status.toLowerCase()}">${item.status}</span>
+        </div>
+      </div>
+      <div class="highlight">
+        <div class="section-title" style="margin: 0 0 10px 0;">Transaction Amount</div>
+        <div class="amount-display">
+          <span class="amount-label">${currency}</span>
+          <span>${formatMoney(item.amount, currency)}</span>
+        </div>
+      </div>
+      <div class="section">
+        <p style="font-size: 13px; line-height: 1.6; color: #374151;">
+          Thank you for your payment. This receipt serves as proof of your transaction and is valid for all purposes. Please retain this document for your records.
+        </p>
+        <p class="security-note">✓ This receipt has been digitally generated and is secure.</p>
+      </div>
+    </div>
+    <div class="footer">
+      <p>RentFlow Property Management System</p>
+      <p style="margin-top: 8px; opacity: 0.7;">For support, contact management@rentflow.app</p>
+    </div>
+  </div>
+</body>
+</html>`;
+                  const blob = new Blob([receiptHTML], { type: 'text/html' });
+                  const url = URL.createObjectURL(blob);
+                  const link = document.createElement('a');
+                  link.href = url;
+                  link.download = `receipt-${item.receiptNumber}.html`;
+                  link.click();
+                  URL.revokeObjectURL(url);
+                }}>Download receipt</button>
               </div>
             </div>
           )) : <div className="table-row empty"><span>No payments available yet.</span></div>}
@@ -1754,9 +2017,9 @@ function NoticesPage({ role, notifications, onSendNotice }: { role: Role; notifi
     if (fileData) payload.attachment = fileData;
     try {
       const ok = await onSendNotice({ template: title || message.slice(0, 80), channels: ch.length ? ch : undefined, payload });
-      setStatus(ok ? "Notice queued." : "Failed to queue notice.");
+      setStatus(ok ? `✓ Notice sent via ${ch.join(", ").toUpperCase()}. Recipients will be notified.` : "Failed to queue notice.");
       if (ok) {
-        setTitle(""); setMessage(""); setFileData(null);
+        setTitle(""); setMessage(""); setFileData(null); setChannels({ sms: false, email: false, push: true });
       }
     } catch (err) {
       setStatus("Error sending notice.");
@@ -1782,14 +2045,17 @@ function NoticesPage({ role, notifications, onSendNotice }: { role: Role; notifi
       ) : null}
       <div className="notice-list">
         {visibleNotices.length > 0 ? visibleNotices.map((notice) => (
-          <div key={notice.id}>
-            <span>{notice.channel}</span>
-            <strong>{notice.template}</strong>
-            {notice.createdAt && <small>{formatDateTime(notice.createdAt)}</small>}
-            {notice.payload?.attachment ? <div className="notice-attachment"><a href={String(notice.payload.attachment)} target="_blank" rel="noreferrer">Open memo</a></div> : null}
+          <div key={notice.id} style={{ background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: "8px", padding: "16px", marginBottom: "12px", transition: "all 0.2s" }} onMouseEnter={(e) => { e.currentTarget.style.background = "#f3f4f6"; e.currentTarget.style.boxShadow = "0 1px 3px rgba(0,0,0,0.1)"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "#f9fafb"; e.currentTarget.style.boxShadow = "none"; }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
+              <span style={{ display: "inline-block", background: notice.channel === "push" ? "#dbeafe" : notice.channel === "email" ? "#f3e8ff" : "#fef3c7", color: notice.channel === "push" ? "#0c4a6e" : notice.channel === "email" ? "#5b21b6" : "#92400e", padding: "4px 8px", borderRadius: "4px", fontSize: "11px", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.5px" }}>{notice.channel}</span>
+              {notice.createdAt && <small style={{ color: "#6b7280", fontSize: "12px" }}>{formatDateTime(notice.createdAt)}</small>}
+            </div>
+            <strong style={{ display: "block", marginBottom: "6px", color: "#1f2937", fontSize: "14px" }}>{notice.template}</strong>
+            {typeof notice.payload?.body === "string" && notice.payload.body && <p style={{ fontSize: "13px", color: "#4b5563", lineHeight: "1.5", marginBottom: "8px" }}>{notice.payload.body.slice(0, 150)}{notice.payload.body.length > 150 ? "..." : ""}</p>}
+            {notice.payload?.attachment ? <div className="notice-attachment"><a href={String(notice.payload.attachment)} target="_blank" rel="noreferrer" style={{ display: "inline-block", padding: "6px 12px", background: "#3b82f6", color: "white", borderRadius: "4px", fontSize: "12px", textDecoration: "none", fontWeight: "500" }}>Open memo</a></div> : null}
           </div>
         )) : (
-          <div className="notice-empty"><p>No push alerts or operational notices are available.</p></div>
+          <div className="notice-empty"><p style={{ color: "#6b7280", fontSize: "14px", textAlign: "center", padding: "30px 20px" }}>No push alerts or operational notices are available. Check back later for updates.</p></div>
         )}
       </div>
     </article>
@@ -2039,7 +2305,7 @@ function TabContent({
   notifications: ServerNotification[];
   onLoadThread: (threadId: string) => Promise<void>;
   onSendMessage: (threadId: string, body: string, attachmentUrls?: string[]) => Promise<void>;
-  onSendPushAlert: (message: string) => Promise<void>;
+  onSendPushAlert: (message: string, propertyId?: string) => Promise<void>;
   onCreateListing: (payload: Record<string, unknown>) => Promise<ServerProperty | undefined>;
   onCreateUnit: (payload: Record<string, unknown>) => Promise<ServerUnit | null>;
   onCreateTenant: (payload: { name: string; email: string; phone: string }) => Promise<ServerTenant | null>;
@@ -2061,8 +2327,8 @@ function TabContent({
   if (activeTab === "Properties") return <PropertiesPage role={role} currency={currency} properties={properties} units={units} tenants={tenants} expenses={expenses} onCreateListing={onCreateListing} onCreateUnit={onCreateUnit} onCreateTenant={onCreateTenant} onUpdateUnit={onUpdateUnit} onRecordExpense={onRecordExpense} onUploadAgreementTemplate={onUploadAgreementTemplate} onGenerateLeaseDocuments={onGenerateLeaseDocuments} />;
   if (activeTab === "Payments") return <PaymentsPage role={role} currency={currency} payments={payments} onMakePayment={onMakePayment} onApprovePayment={onApprovePayment} />;
   if (activeTab === "Maintenance") return <MaintenancePage role={role} maintenanceData={maintenanceData} onSubmitMaintenance={onSubmitMaintenance} onUpdateMaintenance={onUpdateMaintenance} />;
-  if (activeTab === "Messaging") return <section className="messaging-grid"><MessagingCenter role={role} threads={threads} messages={messages} notifications={notifications} onLoadThread={onLoadThread} onSendMessage={onSendMessage} onSendPushAlert={onSendPushAlert} /><NoticesPage role={role} notifications={notifications} onSendNotice={sendNotice} /></section>;
-  if (activeTab === "Notices") return <NoticesPage role={role} notifications={notifications} onSendNotice={sendNotice} />;
+  if (activeTab === "Messaging") return <section className="messaging-grid"><MessagingCenter role={role} threads={threads} messages={messages} notifications={notifications} onLoadThread={onLoadThread} onSendMessage={onSendMessage} onSendPushAlert={onSendPushAlert} /><NoticesPage role={role} notifications={notifications} onSendNotice={onSendNotice} /></section>;
+  if (activeTab === "Notices") return <NoticesPage role={role} notifications={notifications} onSendNotice={onSendNotice} />;
   if (activeTab === "Reports") return <ReportsPage role={role} currency={currency} />;
   if (activeTab === "Security") return <SecurityPage role={role} securityRecords={securityRecords} onAddSecurityRecord={onAddSecurityRecord} />;
   if (activeTab === "Profile") return <ProfilePage role={role} />;
@@ -2109,6 +2375,49 @@ function LandingPage({ onSelectMode }: { onSelectMode: (mode: "login" | "signup"
         <p className="small-copy">Tenant accounts may self-register. Management, owner, and admin accounts are created by the administrator.</p>
       </section>
     </main>
+  );
+}
+
+function PasswordChangeForm({ onSubmit, error }: { onSubmit: (payload: { currentPassword: string; newPassword: string; confirmPassword: string }) => Promise<boolean>; error?: string }) {
+  const [currentPassword, setCurrentPassword] = useState("Tenant@2026");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [status, setStatus] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function submit() {
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      setStatus("Fill in all password fields before continuing.");
+      return;
+    }
+    setLoading(true);
+    const ok = await onSubmit({ currentPassword, newPassword, confirmPassword });
+    setLoading(false);
+    if (!ok) {
+      setStatus("Password update failed. Check your current password and try again.");
+      return;
+    }
+    setStatus("Password updated successfully.");
+  }
+
+  return (
+    <>
+      <label>
+        Current password
+        <input value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} type="password" placeholder="Current password" />
+      </label>
+      <label>
+        New password
+        <input value={newPassword} onChange={(event) => setNewPassword(event.target.value)} type="password" placeholder="Enter new password" />
+      </label>
+      <label>
+        Confirm password
+        <input value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} type="password" placeholder="Repeat new password" />
+      </label>
+      {status && <p className="status-note error">{status}</p>}
+      {error && <p className="status-note error">{error}</p>}
+      <button className="primary-cta" onClick={submit} disabled={loading}>{loading ? "Updating..." : "Update password"}</button>
+    </>
   );
 }
 
@@ -2197,7 +2506,7 @@ function AppShell() {
   const [activeTab, setActiveTab] = useState<Tab>("Overview");
   const [dark, setDark] = useState(true);
   const [currency, setCurrency] = useState<Currency>("USD");
-  const [screen, setScreen] = useState<"landing" | "login" | "signup" | "app">("landing");
+  const [screen, setScreen] = useState<"landing" | "login" | "signup" | "password-change" | "app">("landing");
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<BackendUser | null>(null);
   const [propertiesData, setPropertiesData] = useState<ServerProperty[]>([]);
@@ -2218,10 +2527,10 @@ function AppShell() {
   const availableTabs = useMemo(() => roleTabs[role], [role]);
 
   const defaultCredential: Record<Role, { email: string; password: string }> = {
-    Tenant: { email: "tenant@rentflow.app", password: "RentFlow@2026" },
-    Management: { email: "obwandalordphick14@gmail.com", password: "Lord9632@@" },
-    Owner: { email: "owner@rentflow.app", password: "RentFlow@2026" },
-    "Super Admin": { email: "amanicoretech@gmail.com", password: "Lord9632@@" }
+    Tenant: { email: "tenant@test.com", password: "password" },
+    Management: { email: "caretaker@test.com", password: "password" },
+    Owner: { email: "owner@test.com", password: "password" },
+    "Super Admin": { email: "admin@test.com", password: "password" }
   };
 
   useEffect(() => {
@@ -2245,6 +2554,10 @@ function AppShell() {
           const ticket = payload.ticket as ServerMaintenanceTicket;
           setMaintenanceData((current) => [ticket, ...current]);
         }
+        if (payload.type === "maintenance.ticket.updated") {
+          const ticket = payload.ticket as ServerMaintenanceTicket;
+          setMaintenanceData((current) => current.map((t) => t.id === ticket.id ? ticket : t));
+        }
       } catch {
         // ignore invalid realtime payload
       }
@@ -2262,7 +2575,7 @@ function AppShell() {
 
   async function fetchAppData(token: string) {
     try {
-      const [propertiesRes, unitsRes, maintenanceRes, paymentsRes, threadsRes, notificationsRes, securityRes] = await Promise.all([
+      const requests = [
         fetchJson<{ data: ServerProperty[] }>("/api/properties", { headers: getAuthHeaders(token) }),
         fetchJson<{ data: ServerUnit[] }>("/api/units", { headers: getAuthHeaders(token) }),
         fetchJson<{ data: ServerMaintenanceTicket[] }>("/api/maintenance", { headers: getAuthHeaders(token) }),
@@ -2270,7 +2583,17 @@ function AppShell() {
         fetchJson<{ data: ServerThread[] }>("/api/messages/threads", { headers: getAuthHeaders(token) }),
         fetchJson<{ data: ServerNotification[] }>("/api/notifications", { headers: getAuthHeaders(token) }),
         fetchJson<{ data: ServerSecurityRecord[] }>("/api/security", { headers: getAuthHeaders(token) })
-      ]);
+      ];
+      
+      // Fetch tenants only for management roles
+      let tenantsRes: { data: ServerTenant[] } | null = null;
+      if (["Management", "Owner", "Super Admin"].includes(role)) {
+        requests.push(fetchJson<{ data: ServerTenant[] }>("/api/tenants", { headers: getAuthHeaders(token) }).catch(() => ({ data: [] })));
+      }
+      
+      const results = await Promise.all(requests);
+      const [propertiesRes, unitsRes, maintenanceRes, paymentsRes, threadsRes, notificationsRes, securityRes, ...optionalRes] = results;
+      
       setPropertiesData(propertiesRes.data);
       setUnitsData(unitsRes.data);
       setMaintenanceData(maintenanceRes.data);
@@ -2280,6 +2603,11 @@ function AppShell() {
       setThreads(threadItems);
       setNotifications(notificationsRes.data);
       setSecurityRecords(securityRes.data);
+      
+      // Set tenants data if the request was made
+      if (optionalRes.length > 0 && optionalRes[0]) {
+        setTenantsData(optionalRes[0].data);
+      }
     } catch (error) {
       console.error(error);
     }
@@ -2296,7 +2624,7 @@ function AppShell() {
     setAuthError("");
     setAuthLoading(true);
     try {
-      const result = await fetchJson<{ accessToken: string; user: BackendUser }>("/api/auth/login", {
+      const result = await fetchJson<{ accessToken: string; user: BackendUser; requiresPasswordChange?: boolean }>("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: payload.email.trim(), password: payload.password.trim(), device: "RentFlow dashboard" })
@@ -2305,7 +2633,11 @@ function AppShell() {
       setCurrentUser(result.user);
       setRole(mapBackendRole(result.user.role));
       setActiveTab("Overview");
-      setScreen("app");
+      if (result.requiresPasswordChange) {
+        setScreen("password-change");
+      } else {
+        setScreen("app");
+      }
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -2375,13 +2707,13 @@ function AppShell() {
     }
   }
 
-  async function sendPushAlert(message: string) {
+  async function sendPushAlert(message: string, propertyId?: string) {
     if (!accessToken) return;
     try {
       const result = await fetchJson<{ data: unknown }>("/api/notifications", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...getAuthHeaders(accessToken) },
-        body: JSON.stringify({ message, channels: ["push", "email"], userId: null })
+        body: JSON.stringify({ message, channels: ["push", "email"], userId: null, propertyId })
       });
       console.log("Push alert queued", result);
     } catch (error) {
@@ -2431,7 +2763,8 @@ function AppShell() {
       setUnitsData((current) => current.map((unit) => unit.id === payload.unitId ? result.data : unit));
       return result.data;
     } catch (error) {
-      console.error(error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error("Unit update failed:", errorMessage);
       return null;
     }
   }
@@ -2507,10 +2840,19 @@ function AppShell() {
   async function submitMaintenanceTicket(payload: { title: string; priority: string; description: string }) {
     if (!accessToken) return null;
     try {
+      const assignedUnit = unitsData.find((unit) => unit.tenantId === currentUser?.id) ?? unitsData[0];
+      const propertyId = assignedUnit ? assignedUnit.propertyId : propertiesData[0]?.id ?? "";
+      const unitId = assignedUnit?.id ?? unitsData[0]?.id ?? "";
       const result = await fetchJson<{ data: ServerMaintenanceTicket }>("/api/maintenance", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...getAuthHeaders(accessToken) },
-        body: JSON.stringify({ title: payload.title, priority: payload.priority, description: payload.description })
+        body: JSON.stringify({
+          title: payload.title,
+          priority: payload.priority,
+          description: payload.description,
+          propertyId,
+          unitId
+        })
       });
       setMaintenanceData((current) => [result.data, ...current]);
       return result.data;
@@ -2536,7 +2878,7 @@ function AppShell() {
     }
   }
 
-  async function makePayment(payload: { amount: number; method: "mpesa" | "bank" | "card"; accountName?: string; accountNumber?: string; bankName?: string; phoneNumber?: string; cardNumber?: string; expiry?: string; cvc?: string; }) {
+  async function makePayment(payload: { amount: number; method: "mpesa" | "mobile_money" | "bank" | "card"; accountName?: string; accountNumber?: string; bankName?: string; phoneNumber?: string; cardNumber?: string; expiry?: string; cvc?: string; }) {
     if (!accessToken) return null;
     try {
       const result = await fetchJson<{ data: ServerPayment }>("/api/payments", {
@@ -2608,6 +2950,26 @@ function AppShell() {
     setActiveTab(availableTabs.includes(nextTab) ? nextTab : "Overview");
   }
 
+  async function changePassword(payload: { currentPassword: string; newPassword: string; confirmPassword: string }) {
+    if (!accessToken) return false;
+    try {
+      const result = await fetchJson<{ status: string; message: string }>("/api/auth/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders(accessToken) },
+        body: JSON.stringify(payload)
+      });
+      if (result.status === "updated") {
+        setAuthError("");
+        setScreen("app");
+        return true;
+      }
+      return false;
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : String(error));
+      return false;
+    }
+  }
+
   if (screen === "landing") return <LandingPage onSelectMode={(mode) => setScreen(mode)} />;
 
   if (screen === "login" || screen === "signup") {
@@ -2620,6 +2982,22 @@ function AppShell() {
         error={authError}
         loading={authLoading}
       />
+    );
+  }
+
+  if (screen === "password-change") {
+    return (
+      <main className="auth-screen">
+        <section className="auth-card">
+          <div className="landing-brand">
+            <div className="brand-mark">R</div>
+            <span>RentFlow</span>
+          </div>
+          <h1>Change your password</h1>
+          <p>For security, update your password before accessing the workspace. Your default password is Tenant@2026.</p>
+          <PasswordChangeForm onSubmit={changePassword} error={authError} />
+        </section>
+      </main>
     );
   }
 
@@ -2672,6 +3050,8 @@ function AppShell() {
           currency={currency}
           properties={propertiesData}
           units={unitsData}
+          tenants={tenantsData}
+          expenses={expensesData}
           maintenanceData={maintenanceData}
           threads={threads}
           messages={messages}
@@ -2681,6 +3061,9 @@ function AppShell() {
           onSendPushAlert={sendPushAlert}
           onCreateListing={createListing}
           onCreateUnit={createUnit}
+          onCreateTenant={createTenant}
+          onUpdateUnit={updateUnit}
+          onRecordExpense={recordExpense}
           onUploadAgreementTemplate={uploadAgreementTemplate}
           onGenerateLeaseDocuments={generateLeaseDocuments}
           onSubmitMaintenance={submitMaintenanceTicket}
