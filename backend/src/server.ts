@@ -20,7 +20,7 @@ import {
   units,
   users
 } from "./data/demoData.js";
-import { securityRecords } from "./data/demoData.js";
+import { securityRecords, visitorRecords } from "./data/demoData.js";
 import { authenticate, requireRoles, signAccessToken } from "./middleware/auth.js";
 import { openApiDocument } from "./openapi.js";
 import {
@@ -31,6 +31,8 @@ import {
   createNotification,
   createPayment as createDbPayment,
   updatePaymentStatus,
+  updatePropertyManager,
+  updatePropertyOwner,
   createPaymentAccount,
   createProperty,
   createUnit,
@@ -60,7 +62,10 @@ import {
   updateUnit,
   listExpenses,
   createExpense,
-  upsertMonthlyRentReminder
+  upsertMonthlyRentReminder,
+  listVisitorRecords,
+  createVisitorRecord,
+  updateVisitorRecord
 } from "./repositories.js";
 import { Payment, Role, User } from "./types.js";
 
@@ -123,6 +128,51 @@ app.get("/health", async (_req, res) => {
     timestamp: new Date().toISOString(),
     database: await databaseHealth()
   });
+});
+
+const oauthProviders = {
+  google: {
+    clientId: process.env.GOOGLE_CLIENT_ID,
+    authorizationEndpoint: "https://accounts.google.com/o/oauth2/v2/auth",
+    scope: "openid email profile"
+  },
+  facebook: {
+    clientId: process.env.FACEBOOK_APP_ID,
+    authorizationEndpoint: "https://www.facebook.com/v20.0/dialog/oauth",
+    scope: "email,public_profile"
+  },
+  apple: {
+    clientId: process.env.APPLE_SERVICE_ID,
+    authorizationEndpoint: "https://appleid.apple.com/auth/authorize",
+    scope: "name email"
+  }
+} as const;
+
+app.get("/api/auth/oauth/:provider", (req, res) => {
+  const providerName = String(req.params.provider).toLowerCase() as keyof typeof oauthProviders;
+  const provider = oauthProviders[providerName];
+  if (!provider) return res.status(404).json({ error: "Unsupported OAuth provider" });
+  if (!provider.clientId) {
+    return res.status(503).json({ error: `${providerName} OAuth is not configured. Add its credentials to the backend environment.` });
+  }
+
+  const redirectUri = process.env[`${providerName.toUpperCase()}_OAUTH_REDIRECT_URI`] ?? `http://localhost:${port}/api/auth/oauth/${providerName}/callback`;
+  const url = new URL(provider.authorizationEndpoint);
+  url.searchParams.set("client_id", provider.clientId);
+  url.searchParams.set("redirect_uri", redirectUri);
+  url.searchParams.set("response_type", "code");
+  url.searchParams.set("scope", provider.scope);
+  if (providerName === "google") url.searchParams.set("access_type", "offline");
+  if (providerName === "apple") url.searchParams.set("response_mode", "form_post");
+  return res.redirect(url.toString());
+});
+
+app.all("/api/auth/oauth/:provider/callback", (req, res) => {
+  const provider = String(req.params.provider).toLowerCase();
+  if (req.query.error || (req.body && req.body.error)) {
+    return res.status(400).send(`OAuth sign-in was cancelled or denied by ${provider}. You can close this page and try again.`);
+  }
+  return res.status(501).send(`The ${provider} authorization succeeded, but account linking still needs a provider token exchange configuration.`);
 });
 
 app.use("/docs", swaggerUi.serve, swaggerUi.setup(openApiDocument));
@@ -194,10 +244,16 @@ app.post("/api/admin/users", authenticate, async (req, res) => {
   try {
     const user = await createUser({ name, email, phone, passwordHash, role: role as Role });
     if (role === "caretaker" && propertyId) {
+      // Update in database
+      await updatePropertyManager(propertyId, user.id).catch(() => undefined);
+      // Update in memory
       const property = properties.find((item) => item.id === propertyId);
       if (property) property.managerId = user.id;
     }
     if (role === "owner" && propertyId) {
+      // Update in database
+      await updatePropertyOwner(propertyId, user.id).catch(() => undefined);
+      // Update in memory
       const property = properties.find((item) => item.id === propertyId);
       if (property) property.ownerId = user.id;
     }
@@ -313,10 +369,23 @@ app.get("/api/dashboard", authenticate, async (req, res) => {
 
 app.get("/api/properties", authenticate, async (req, res) => {
   try {
-    const data = (await listProperties()) as Array<{ id: string; [key: string]: unknown }>;
-    const allowed = getAllowedPropertyIdsForUser(req.user!);
-    const scoped = req.user!.role === "super_admin" ? data : data.filter((property) => allowed.includes(String(property.id)));
-    res.json({ data: scoped });
+    const data = (await listProperties()) as Array<{ id: string; ownerId?: string; managerId?: string; [key: string]: unknown }>;
+    
+    // Filter based on user role
+    let filtered = data;
+    if (req.user!.role === "tenant") {
+      // Tenants don't see properties directly
+      filtered = [];
+    } else if (req.user!.role === "caretaker") {
+      // Management sees only properties they manage
+      filtered = data.filter((p) => p.managerId === req.user!.id);
+    } else if (req.user!.role === "owner") {
+      // Owners see properties they own or manage
+      filtered = data.filter((p) => p.ownerId === req.user!.id || p.managerId === req.user!.id);
+    }
+    // super_admin sees all properties (no filtering)
+    
+    res.json({ data: filtered });
   } catch (error) {
     return res.status(500).json({ error: "Failed to load properties from database." });
   }
@@ -391,7 +460,7 @@ app.get("/api/agreements/templates", authenticate, async (req, res) => {
 app.post("/api/agreements/templates", authenticate, requireRoles("caretaker", "owner", "super_admin"), async (req, res) => {
   try {
     const template = await createAgreementTemplate(req.user!, {
-      propertyId: req.body.propertyId ? String(req.body.propertyId) : undefined,
+      propertyId: String(req.body.propertyId ?? ""),
       name: String(req.body.name ?? "Lease agreement template"),
       templateText: String(req.body.templateText ?? ""),
       fileName: req.body.fileName ? String(req.body.fileName) : undefined
@@ -487,16 +556,170 @@ app.post("/api/security", authenticate, requireRoles("caretaker", "owner", "supe
     return res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
   }
 });
+
+app.get("/api/visitors", authenticate, async (req, res) => {
+  try {
+    const propertyId = req.query.propertyId as string | undefined;
+    const data = await listVisitorRecords(propertyId).catch(() => []);
+    res.json({ data });
+  } catch (error) {
+    res.json({ data: [], error: error instanceof Error ? error.message : "Failed to load visitor records" });
+  }
+});
+
+app.post("/api/visitors", authenticate, requireRoles("caretaker", "owner", "super_admin"), async (req, res) => {
+  try {
+    const dbRecord = await createVisitorRecord({
+      visitorName: String(req.body.visitorName ?? ""),
+      phone: String(req.body.phone ?? ""),
+      email: req.body.email ? String(req.body.email) : undefined,
+      reason: String(req.body.reason ?? ""),
+      checkIn: String(req.body.checkIn ?? new Date().toISOString()),
+      checkOut: req.body.checkOut ? String(req.body.checkOut) : undefined,
+      destination: String(req.body.destination ?? ""),
+      propertyId: String(req.body.propertyId ?? ""),
+      unitId: String(req.body.unitId ?? ""),
+      floor: req.body.floor ? String(req.body.floor) : undefined,
+      houseNumber: req.body.houseNumber ? String(req.body.houseNumber) : undefined,
+      status: req.body.status ? String(req.body.status) : "active"
+    }).catch(() => null);
+    
+    if (dbRecord) {
+      await createAuditLog(req.user!.id, "CREATE_VISITOR", "visitor", req.body.visitorName).catch(() => undefined);
+      return res.status(201).json({ data: dbRecord, storage: "postgres" });
+    }
+
+    const record = {
+      id: `visitor_${Date.now()}`,
+      visitorName: String(req.body.visitorName ?? ""),
+      phone: String(req.body.phone ?? ""),
+      email: req.body.email ? String(req.body.email) : "",
+      reason: String(req.body.reason ?? ""),
+      checkIn: String(req.body.checkIn ?? new Date().toISOString()),
+      checkOut: req.body.checkOut ? String(req.body.checkOut) : "",
+      destination: String(req.body.destination ?? ""),
+      propertyId: String(req.body.propertyId ?? ""),
+      propertyName: req.body.propertyName ? String(req.body.propertyName) : "",
+      unitId: String(req.body.unitId ?? ""),
+      floor: req.body.floor ? String(req.body.floor) : "",
+      houseNumber: req.body.houseNumber ? String(req.body.houseNumber) : "",
+      status: req.body.status ? String(req.body.status) : "active",
+      createdAt: new Date().toISOString()
+    };
+    visitorRecords.unshift(record);
+    await createAuditLog(req.user!.id, "CREATE_VISITOR", "visitor", req.body.visitorName).catch(() => undefined);
+    return res.status(201).json({ data: record, storage: "memory-fallback" });
+  } catch (error) {
+    return res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+app.put("/api/visitors/:id", authenticate, requireRoles("caretaker", "owner", "super_admin"), async (req, res) => {
+  try {
+    const id = String(req.params.id);
+    const dbRecord = await updateVisitorRecord(id, {
+      visitorName: req.body.visitorName ? String(req.body.visitorName) : undefined,
+      phone: req.body.phone ? String(req.body.phone) : undefined,
+      email: req.body.email ? String(req.body.email) : undefined,
+      reason: req.body.reason ? String(req.body.reason) : undefined,
+      checkIn: req.body.checkIn ? String(req.body.checkIn) : undefined,
+      checkOut: req.body.checkOut ? String(req.body.checkOut) : undefined,
+      destination: req.body.destination ? String(req.body.destination) : undefined,
+      propertyId: req.body.propertyId ? String(req.body.propertyId) : undefined,
+      unitId: req.body.unitId ? String(req.body.unitId) : undefined,
+      floor: req.body.floor ? String(req.body.floor) : undefined,
+      houseNumber: req.body.houseNumber ? String(req.body.houseNumber) : undefined,
+      status: req.body.status ? String(req.body.status) : undefined
+    }).catch(() => null);
+
+    if (dbRecord) {
+      await createAuditLog(req.user!.id, "UPDATE_VISITOR", "visitor", id).catch(() => undefined);
+      return res.json({ data: dbRecord, storage: "postgres" });
+    }
+
+    const record = visitorRecords.find((r) => (r as any).id === id);
+    if (!record) return res.status(404).json({ error: "Visitor record not found" });
+
+    Object.assign(record, {
+      visitorName: req.body.visitorName ?? (record as any).visitorName,
+      phone: req.body.phone ?? (record as any).phone,
+      email: req.body.email ?? (record as any).email,
+      reason: req.body.reason ?? (record as any).reason,
+      checkIn: req.body.checkIn ?? (record as any).checkIn,
+      checkOut: req.body.checkOut ?? (record as any).checkOut,
+      destination: req.body.destination ?? (record as any).destination,
+      propertyId: req.body.propertyId ?? (record as any).propertyId,
+      propertyName: req.body.propertyName ?? (record as any).propertyName,
+      floor: req.body.floor ?? (record as any).floor,
+      houseNumber: req.body.houseNumber ?? (record as any).houseNumber,
+      status: req.body.status ?? (record as any).status
+    });
+
+    await createAuditLog(req.user!.id, "UPDATE_VISITOR", "visitor", id).catch(() => undefined);
+    return res.json({ data: record, storage: "memory-fallback" });
+  } catch (error) {
+    return res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
 app.get("/api/units", authenticate, async (req, res) => {
-  const data = (await listUnits()) as Array<{ propertyId: string; [key: string]: unknown }>;
-  const allowed = getAllowedPropertyIdsForUser(req.user!);
-  const scoped = req.user!.role === "super_admin" ? data : data.filter((unit) => allowed.includes(String(unit.propertyId)));
-  res.json({ data: scoped });
+  try {
+    const allUnits = (await listUnits()) as Array<{ propertyId: string; [key: string]: unknown }>;
+    const allProperties = (await listProperties()) as Array<{ id: string; ownerId?: string; managerId?: string; [key: string]: unknown }>;
+    
+    // Build allowed property IDs based on user role
+    let allowedPropertyIds: string[] = [];
+    if (req.user!.role === "tenant") {
+      // Tenants see units assigned to them
+      const tenantUnits = allUnits.filter((u) => (u as any).tenantId === req.user!.id);
+      allowedPropertyIds = [...new Set(tenantUnits.map((u) => String(u.propertyId)))];
+    } else if (req.user!.role === "caretaker") {
+      // Management sees units for properties they manage
+      allowedPropertyIds = allProperties
+        .filter((p) => p.managerId === req.user!.id)
+        .map((p) => String(p.id));
+    } else if (req.user!.role === "owner") {
+      // Owners see units for properties they own or manage
+      allowedPropertyIds = allProperties
+        .filter((p) => p.ownerId === req.user!.id || p.managerId === req.user!.id)
+        .map((p) => String(p.id));
+    } else if (req.user!.role === "super_admin") {
+      // Super admin sees all units
+      allowedPropertyIds = allProperties.map((p) => String(p.id));
+    }
+    
+    const scoped = allowedPropertyIds.length > 0 
+      ? allUnits.filter((unit) => allowedPropertyIds.includes(String(unit.propertyId)))
+      : [];
+    res.json({ data: scoped });
+  } catch (error) {
+    res.json({ data: [] });
+  }
 });
 
 app.put("/api/units/:unitId", authenticate, requireRoles("caretaker", "owner", "super_admin"), async (req, res) => {
   const unitId = String(req.params.unitId);
   try {
+    // Check access control - user must have access to the unit's property
+    const allProperties = (await listProperties()) as Array<{ id: string; ownerId?: string; managerId?: string; [key: string]: unknown }>;
+    const allUnits = (await listUnits()) as Array<{ id: string; propertyId: string; [key: string]: unknown }>;
+    
+    const targetUnit = allUnits.find((u) => u.id === unitId);
+    if (!targetUnit) {
+      // Fall through to check in-memory array
+    } else {
+      const targetProperty = allProperties.find((p) => p.id === targetUnit.propertyId);
+      if (targetProperty) {
+        const hasAccess = req.user!.role === "super_admin" || 
+          (req.user!.role === "caretaker" && targetProperty.managerId === req.user!.id) ||
+          (req.user!.role === "owner" && (targetProperty.ownerId === req.user!.id || targetProperty.managerId === req.user!.id));
+        
+        if (!hasAccess) {
+          return res.status(403).json({ error: "You do not have permission to access this unit" });
+        }
+      }
+    }
+    
     const sourceUnit = units.find((unit) => unit.id === unitId);
     const requestedTenantId = req.body.tenantId ? String(req.body.tenantId) : undefined;
     console.log("UPDATE UNIT", { unitId, sourceUnit: sourceUnit?.id, requestedTenantId, status: req.body.status });
@@ -647,18 +870,48 @@ app.get("/api/tenants", authenticate, requireRoles("caretaker", "owner", "super_
 });
 
 app.post("/api/tenants", authenticate, requireRoles("caretaker", "owner", "super_admin"), async (req, res) => {
-  const { name, email, phone, password = DEFAULT_ACCOUNT_PASSWORD } = req.body;
+  const { name, email, phone, password = DEFAULT_ACCOUNT_PASSWORD, unitId, propertyId, block, floor, number } = req.body;
   if (!name || !email || !phone) return res.status(400).json({ error: "name, email, and phone are required" });
+  
   const passwordHash = await bcrypt.hash(password, 10);
   try {
     const user = await createUser({ name, email, phone, passwordHash, role: "tenant" });
-    await createAuditLog(req.user!.id, "CREATE_TENANT", "user", user.id).catch(() => undefined);
-    return res.status(201).json({ data: user, storage: "postgres" });
+    
+    // If unitId is provided, assign tenant to unit
+    if (unitId) {
+      const unitToUpdate = units.find((u) => u.id === unitId);
+      if (unitToUpdate) {
+        const updated = await updateUnit({
+          id: unitId,
+          tenantId: user.id,
+          status: "occupied"
+        }).catch(() => null);
+        
+        if (!updated) {
+          // Fall back to in-memory update
+          unitToUpdate.tenantId = user.id;
+          unitToUpdate.status = "occupied";
+        }
+      }
+    }
+    
+    await createAuditLog(req.user!.id, "CREATE_TENANT", "user", user.id, { unitId, propertyId }).catch(() => undefined);
+    return res.status(201).json({ data: user, unitAssigned: !!unitId, storage: "postgres" });
   } catch (error) {
     const user = { id: `usr_${Date.now()}`, name, email, phone, role: "tenant", mfaEnabled: false, verified: false };
     users.unshift(user as any);
+    
+    // If unitId is provided, assign tenant to unit in memory
+    if (unitId) {
+      const unitToUpdate = units.find((u) => u.id === unitId);
+      if (unitToUpdate) {
+        unitToUpdate.tenantId = user.id;
+        unitToUpdate.status = "occupied";
+      }
+    }
+    
     auditLogs.unshift({ id: `aud_${Date.now()}`, actorId: req.user!.id, action: "CREATE_TENANT", target: email, createdAt: new Date().toISOString() });
-    return res.status(201).json({ data: user, storage: "memory-fallback", warning: error instanceof Error ? error.message : "Database unavailable" });
+    return res.status(201).json({ data: user, unitAssigned: !!unitId, storage: "memory-fallback", warning: error instanceof Error ? error.message : "Database unavailable" });
   }
 });
 
@@ -882,13 +1135,15 @@ app.post("/api/notifications/rent-reminder", authenticate, requireRoles("caretak
 
 app.post("/api/notifications", authenticate, requireRoles("caretaker", "owner", "super_admin"), async (req, res) => {
   const channels = req.body.channels ?? ["sms", "email", "push"];
-  const payload = req.body.payload ?? { propertyId: req.body.propertyId };
+  const propertyId = req.body.propertyId;
+  const payload = { ...req.body.payload, propertyId };
   const queued = await Promise.all(channels.map((channel: "sms" | "email" | "push" | "whatsapp") =>
     createNotification(req.user!, {
       userId: req.body.userId,
       channel,
       template: req.body.template ?? req.body.message ?? "RentFlow notification",
-      payload: payload
+      payload: payload,
+      propertyId: propertyId
     }).catch(() => null)
   ));
   const pushed = queued.filter(Boolean);

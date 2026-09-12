@@ -1,6 +1,19 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
-  <rect width="128" height="128" rx="24" fill="#0f172a"/>
-  <path d="M30 71 64 31l34 40v27a6 6 0 0 1-6 6H36a6 6 0 0 1-6-6V71Z" fill="#38bdf8"/>
-  <path d="M49 103V73h30v30" fill="#f8fafc"/>
-  <path d="M80 32h15v27" stroke="#f8fafc" stroke-width="8" stroke-linecap="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-labelledby="title desc">
+  <title id="title">RentFlow logo</title>
+  <desc id="desc">A stylized R wrapped by colorful upward and downward arrows</desc>
+  <defs>
+    <linearGradient id="teal" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#075985"/>
+      <stop offset="1" stop-color="#14b8a6"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#facc15"/>
+      <stop offset="1" stop-color="#f97316"/>
+    </linearGradient>
+  </defs>
+  <path d="M43 107c-18-18-17-47 2-64 20-18 50-17 68 2 7 7 11 16 12 25" fill="none" stroke="url(#gold)" stroke-linecap="round" stroke-width="15"/>
+  <path d="m116 20 22 9-8 22" fill="none" stroke="url(#gold)" stroke-linecap="round" stroke-linejoin="round" stroke-width="13"/>
+  <path d="M117 57c17 18 16 47-3 64-20 18-50 17-68-2-7-7-11-16-12-25" fill="none" stroke="url(#teal)" stroke-linecap="round" stroke-width="15"/>
+  <path d="m44 140-22-9 8-22" fill="none" stroke="url(#teal)" stroke-linecap="round" stroke-linejoin="round" stroke-width="13"/>
+  <path d="M57 119V43h28c18 0 29 9 29 24 0 12-7 20-19 23l23 29H98L78 94H72v25H57Zm15-38h11c9 0 15-4 15-12s-6-12-15-12H72v24Z" fill="url(#teal)"/>
 </svg>

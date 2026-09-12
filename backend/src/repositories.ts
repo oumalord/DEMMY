@@ -214,6 +214,28 @@ export async function createProperty(user: User, input: {
   return result.rows[0];
 }
 
+export async function updatePropertyManager(propertyId: string, managerId: string) {
+  const result = await query(
+    `update properties
+     set manager_id = $2
+     where id = $1
+     returning id, owner_id as "ownerId", manager_id as "managerId"`,
+    [propertyId, managerId]
+  );
+  return result.rows[0] ?? null;
+}
+
+export async function updatePropertyOwner(propertyId: string, ownerId: string) {
+  const result = await query(
+    `update properties
+     set owner_id = $2
+     where id = $1
+     returning id, owner_id as "ownerId", manager_id as "managerId"`,
+    [propertyId, ownerId]
+  );
+  return result.rows[0] ?? null;
+}
+
 export async function listUnits() {
   const result = await query(
     `select id,
@@ -349,17 +371,39 @@ export async function createExpense(user: User, input: {
 }
 
 export async function listNotifications(user: User) {
+  // For tenants, get their assigned property; for others, get all their accessible properties
+  let allowedPropertyIds: string[] = [];
+  if (user.role === "tenant") {
+    const assignedUnit = await query("select property_id from units where tenant_id = $1 limit 1", [user.id]);
+    if (assignedUnit.rows[0]) {
+      allowedPropertyIds = [String(assignedUnit.rows[0].property_id)];
+    }
+  } else if (user.role === "caretaker") {
+    const properties = await query("select id from properties where manager_id = $1", [user.id]);
+    allowedPropertyIds = properties.rows.map((row) => String(row.id));
+  } else if (user.role === "owner") {
+    const properties = await query("select id from properties where owner_id = $1 or manager_id = $1", [user.id]);
+    allowedPropertyIds = properties.rows.map((row) => String(row.id));
+  } else if (user.role === "super_admin") {
+    const properties = await query("select id from properties");
+    allowedPropertyIds = properties.rows.map((row) => String(row.id));
+  }
+
   const result = await query(
     `select id,
             user_id as "userId",
             channel,
             template,
             payload,
-            created_at as "createdAt"
+            created_at as "createdAt",
+            payload->>'propertyId' as "propertyId"
      from notifications
      where user_id = $1
-     order by created_at desc`
-  , [user.id]);
+        or (payload->>'propertyId' is null)
+        or (payload->>'propertyId' = any($2::text[]))
+     order by created_at desc
+     limit 100`
+  , [user.id, allowedPropertyIds.length > 0 ? allowedPropertyIds : null]);
   return result.rows;
 }
 
@@ -868,6 +912,7 @@ export async function createNotification(user: User, input: {
   channel: "sms" | "email" | "push" | "whatsapp";
   template: string;
   payload?: Record<string, unknown>;
+  propertyId?: string;
 }) {
   const result = await query(
     `insert into notifications (user_id, channel, template, payload)
@@ -875,7 +920,8 @@ export async function createNotification(user: User, input: {
      returning id, user_id as "userId", channel, template, payload, created_at as "createdAt"`,
     [input.userId ?? user.id, input.channel, input.template, JSON.stringify(input.payload ?? {})]
   );
-  return result.rows[0];
+  const row = result.rows[0];
+  return row ? { ...row, propertyId: input.propertyId } : null;
 }
 
 export async function listNotificationSchedules(user: User) {
@@ -1003,4 +1049,188 @@ export async function dashboardMetrics(user: User) {
     openMaintenance: Number(maintenanceResult.rows[0]?.open_maintenance ?? 0),
     upcomingLeaseExpiries: Number(leasesResult.rows[0]?.upcoming_lease_expiries ?? 0)
   };
+}
+
+export async function listVisitorRecords(propertyId?: string) {
+  let sql = `
+    select id,
+           visitor_name as "visitorName",
+           phone,
+           email,
+           reason,
+           check_in_at as "checkIn",
+           check_out_at as "checkOut",
+           destination,
+           property_id as "propertyId",
+           (select name from properties where id = visitor_passes.property_id) as "propertyName",
+           unit_id as "unitId",
+           floor,
+           house_number as "houseNumber",
+           status,
+           created_at as "createdAt"
+    from visitor_passes
+  `;
+  
+  if (propertyId) {
+    sql += ` where property_id = $1`;
+  }
+  
+  sql += ` order by created_at desc`;
+  
+  const result = await query(sql, propertyId ? [propertyId] : []);
+  return result.rows;
+}
+
+export async function createVisitorRecord(input: {
+  visitorName: string;
+  phone: string;
+  email?: string;
+  reason: string;
+  checkIn: string;
+  checkOut?: string;
+  destination: string;
+  propertyId?: string;
+  unitId?: string;
+  floor?: string;
+  houseNumber?: string;
+  status?: string;
+}) {
+  const result = await query(
+    `insert into visitor_passes (
+       visitor_name, phone, email, reason,
+       check_in_at, check_out_at, destination,
+       property_id, unit_id, floor, house_number,
+       status, qr_token, expires_at
+     )
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+     returning 
+       id,
+       visitor_name as "visitorName",
+       phone,
+       email,
+       reason,
+       check_in_at as "checkIn",
+       check_out_at as "checkOut",
+       destination,
+       property_id as "propertyId",
+       (select name from properties where id = visitor_passes.property_id) as "propertyName",
+       unit_id as "unitId",
+       floor,
+       house_number as "houseNumber",
+       status,
+       created_at as "createdAt"`,
+    [
+      input.visitorName,
+      input.phone,
+      input.email || null,
+      input.reason,
+      input.checkIn,
+      input.checkOut || null,
+      input.destination,
+      input.propertyId || null,
+      input.unitId || null,
+      input.floor || null,
+      input.houseNumber || null,
+      input.status || 'active',
+      `visitor-${Math.random().toString(36).slice(2, 10).toUpperCase()}-${Date.now()}`,
+      new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+    ]
+  );
+  return result.rows[0];
+}
+
+export async function updateVisitorRecord(id: string, input: Partial<{
+  visitorName: string;
+  phone: string;
+  email: string;
+  reason: string;
+  checkIn: string;
+  checkOut: string;
+  destination: string;
+  propertyId: string;
+  unitId: string;
+  floor: string;
+  houseNumber: string;
+  status: string;
+}>) {
+  const updates: string[] = [];
+  const values: unknown[] = [];
+  let paramIndex = 1;
+
+  if (input.visitorName !== undefined) {
+    updates.push(`visitor_name = $${paramIndex++}`);
+    values.push(input.visitorName);
+  }
+  if (input.phone !== undefined) {
+    updates.push(`phone = $${paramIndex++}`);
+    values.push(input.phone);
+  }
+  if (input.email !== undefined) {
+    updates.push(`email = $${paramIndex++}`);
+    values.push(input.email);
+  }
+  if (input.reason !== undefined) {
+    updates.push(`reason = $${paramIndex++}`);
+    values.push(input.reason);
+  }
+  if (input.checkIn !== undefined) {
+    updates.push(`check_in_at = $${paramIndex++}`);
+    values.push(input.checkIn);
+  }
+  if (input.checkOut !== undefined) {
+    updates.push(`check_out_at = $${paramIndex++}`);
+    values.push(input.checkOut);
+  }
+  if (input.destination !== undefined) {
+    updates.push(`destination = $${paramIndex++}`);
+    values.push(input.destination);
+  }
+  if (input.propertyId !== undefined) {
+    updates.push(`property_id = $${paramIndex++}`);
+    values.push(input.propertyId);
+  }
+  if (input.unitId !== undefined) {
+    updates.push(`unit_id = $${paramIndex++}`);
+    values.push(input.unitId);
+  }
+  if (input.floor !== undefined) {
+    updates.push(`floor = $${paramIndex++}`);
+    values.push(input.floor);
+  }
+  if (input.houseNumber !== undefined) {
+    updates.push(`house_number = $${paramIndex++}`);
+    values.push(input.houseNumber);
+  }
+  if (input.status !== undefined) {
+    updates.push(`status = $${paramIndex++}`);
+    values.push(input.status);
+  }
+
+  if (updates.length === 0) return null;
+
+  values.push(id);
+  const sql = `
+    update visitor_passes
+    set ${updates.join(', ')}
+    where id = $${paramIndex}
+    returning 
+      id,
+      visitor_name as "visitorName",
+      phone,
+      email,
+      reason,
+      check_in_at as "checkIn",
+      check_out_at as "checkOut",
+      destination,
+      property_id as "propertyId",
+      (select name from properties where id = visitor_passes.property_id) as "propertyName",
+      unit_id as "unitId",
+      floor,
+      house_number as "houseNumber",
+      status,
+      created_at as "createdAt"
+  `;
+
+  const result = await query(sql, values);
+  return result.rows[0];
 }

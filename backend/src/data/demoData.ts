@@ -184,3 +184,24 @@ export const securityRecords = [
     createdAt: "2026-05-25T14:00:00.000Z"
   }
 ];
+
+export const visitorRecords = [
+  {
+    id: "visitor_001",
+    visitorName: "John Kariuki",
+    phone: "+254700111333",
+    email: "john@email.com",
+    reason: "Maintenance work",
+    checkIn: "2026-05-27T09:00:00.000Z",
+    checkOut: "2026-05-27T17:00:00.000Z",
+    destination: "Unit A-12",
+    propertyId: "prop_westlands",
+    propertyName: "Westlands Heights",
+    unitId: "unit_001",
+    floor: "3",
+    houseNumber: "A-12",
+    status: "checked-out",
+    createdAt: "2026-05-27T08:30:00.000Z"
+  }
+];
+

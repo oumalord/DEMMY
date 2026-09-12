@@ -1,7 +1,11 @@
 import { Pool } from "pg";
 import { Role, User } from "./types.js";
 
-const databaseUrl = process.env.DATABASE_URL ?? "postgres://rentflow:rentflow_dev_password@localhost:5432/rentflow";
+const databaseUrl = process.env.DATABASE_URL;
+
+if (!databaseUrl) {
+  throw new Error("DATABASE_URL is required. Configure the Neon PostgreSQL connection string before starting the backend.");
+}
 
 export const pool = new Pool({
   connectionString: databaseUrl,
