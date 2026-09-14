@@ -38,14 +38,6 @@ API docs: `http://localhost:4000/docs`
 
 AI service: `http://localhost:7000/docs`
 
-## Demo Accounts
-
-| Role | Email | Password |
-| --- | --- | --- |
-| Tenant | tenant@rentflow.app | RentFlow@2026 |
-| Caretaker | caretaker@rentflow.app | RentFlow@2026 |
-| Owner | owner@rentflow.app | RentFlow@2026 |
-| Super Admin | admin@rentflow.app | RentFlow@2026 |
 
 ## Production Notes
 
