@@ -2872,22 +2872,18 @@ function LandingPage({ onSelectMode }: { onSelectMode: (mode: "login" | "signup"
           <span>RentFlow</span>
         </div>
         <h1>Welcome to RentFlow</h1>
-        <p>Access your tenant dashboard, guest passes, and property operations from one place.</p>
         <div className="auth-choice-grid">
           <article className="choice-card">
             <div className="choice-icon"><Lock /></div>
             <h2>Sign in</h2>
-            <p>Already registered? Use your email and password to access your dashboard.</p>
             <button className="primary-action" onClick={() => onSelectMode("login")}>Sign in</button>
           </article>
           <article className="choice-card highlighted">
             <div className="choice-icon"><User /></div>
             <h2>Sign up</h2>
-            <p>Create a tenant account for your apartment listing and connect to management instantly.</p>
             <button className="primary-action" onClick={() => onSelectMode("signup")}>Sign up</button>
           </article>
         </div>
-        <p className="small-copy">Tenant accounts may self-register. Management, owner, and admin accounts are created by the administrator.</p>
       </section>
     </main>
   );
@@ -3022,7 +3018,6 @@ function AuthPage({ mode, onMode, onLogin, onSignup, onLegal, error, loading }: 
           <span>RentFlow</span>
         </div>
         <h1>{mode === "login" ? "Sign in to your account" : "Create tenant account"}</h1>
-        <p>{mode === "login" ? "Enter your email and password to access your workspace." : "Enter tenant details and link your room to begin using RentFlow."}</p>
         <div className="auth-toggle">
           <button className={mode === "login" ? "selected" : ""} onClick={() => onMode("login")}>Sign in</button>
           <button className={mode === "signup" ? "selected" : ""} onClick={() => onMode("signup")}>Sign up</button>
