@@ -565,6 +565,88 @@ function MobileRentFlowHome({ role, currency }: { role: Role; currency: Currency
   );
 }
 
+function TenantHomeDashboard({ user, units, payments, maintenance, notifications, currency, onNavigate }: {
+  user: BackendUser | null;
+  units: ServerUnit[];
+  payments: ServerPayment[];
+  maintenance: ServerMaintenanceTicket[];
+  notifications: ServerNotification[];
+  currency: Currency;
+  onNavigate: (tab: Tab) => void;
+}) {
+  const unit = units[0];
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const monthPayments = payments.filter((payment) => payment.status === "paid" && new Date(payment.paidAt).getTime() >= monthStart.getTime());
+  const paidThisMonth = monthPayments.reduce((sum, payment) => sum + payment.amount, 0);
+  const monthlyRent = unit?.rent ?? 0;
+  const balance = Math.max(monthlyRent - paidThisMonth, 0);
+  const openTickets = maintenance.filter((ticket) => !/resolved|closed|complete/i.test(ticket.status));
+  const months = Array.from({ length: 6 }, (_, index) => {
+    const date = new Date(now.getFullYear(), now.getMonth() - (5 - index), 1);
+    return { date, label: date.toLocaleDateString("en", { month: "short" }), amount: 0 };
+  });
+  for (const payment of payments) {
+    if (payment.status !== "paid") continue;
+    const paidAt = new Date(payment.paidAt);
+    const month = months.find((item) => item.date.getFullYear() === paidAt.getFullYear() && item.date.getMonth() === paidAt.getMonth());
+    if (month) month.amount += payment.amount;
+  }
+  const recentPayments = [...payments].sort((a, b) => new Date(b.paidAt).getTime() - new Date(a.paidAt).getTime()).slice(0, 4);
+
+  return (
+    <section className="tenant-home">
+      <header className="tenant-home-hero">
+        <div>
+          <span className="tenant-eyebrow">RentFlow · Tenant home</span>
+          <h2>Welcome back{user?.name ? `, ${user.name.split(" ")[0]}` : ""}</h2>
+          <p>{unit ? `Unit ${unit.label}` : "No unit is linked to this account yet."}</p>
+        </div>
+        {unit && <div className="tenant-balance-highlight"><span>Current rent balance</span><strong>{formatMoney(balance, currency)}</strong><small>{balance > 0 ? "Based on this month’s recorded payments" : "No outstanding rent balance recorded"}</small></div>}
+        <div className="tenant-home-actions">
+          <button type="button" onClick={() => onNavigate("Payments")}><CreditCard /> View payments</button>
+          <button type="button" onClick={() => onNavigate("Maintenance")}><Wrench /> Report maintenance</button>
+        </div>
+      </header>
+
+      <div className="tenant-dashboard-grid">
+        <article className="tenant-dashboard-section tenant-payment-chart">
+          <div className="tenant-section-heading"><div><span>Payment history</span><h3>Recorded rent payments</h3></div></div>
+          {payments.some((payment) => payment.status === "paid") ? (
+            <ResponsiveContainer width="100%" height={220}>
+              <AreaChart data={months}>
+                <defs><linearGradient id="tenant-rent-area" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#69c7ff" stopOpacity={0.5} /><stop offset="95%" stopColor="#69c7ff" stopOpacity={0.02} /></linearGradient></defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(213,228,245,.12)" />
+                <XAxis dataKey="label" stroke="#b8c9db" />
+                <YAxis stroke="#b8c9db" tickFormatter={(value) => formatMoney(Number(value), currency)} />
+                <Tooltip formatter={(value) => formatMoney(Number(value), currency)} />
+                <Area type="monotone" dataKey="amount" stroke="#80d5ff" fill="url(#tenant-rent-area)" />
+              </AreaChart>
+            </ResponsiveContainer>
+          ) : <p className="tenant-empty-state">No completed rent payments have been recorded yet.</p>}
+        </article>
+
+        <article className="tenant-dashboard-section tenant-rent-summary">
+          <div className="tenant-section-heading"><div><span>This month</span><h3>Rent summary</h3></div></div>
+          {unit ? <dl><div><dt>Monthly rent</dt><dd>{formatMoney(monthlyRent, currency)}</dd></div><div><dt>Paid this month</dt><dd>{formatMoney(paidThisMonth, currency)}</dd></div><div><dt>Open maintenance</dt><dd>{openTickets.length}</dd></div></dl> : <p className="tenant-empty-state">Your management team has not linked a unit to this account.</p>}
+        </article>
+
+        <article className="tenant-dashboard-section">
+          <div className="tenant-section-heading"><div><span>Maintenance</span><h3>Open requests</h3></div><button type="button" onClick={() => onNavigate("Maintenance")}>View all</button></div>
+          {openTickets.length ? openTickets.slice(0, 3).map((ticket) => <div className="tenant-list-row" key={ticket.id}><strong>{ticket.title}</strong><span>{ticket.status.replace(/_/g, " ")}</span></div>) : <p className="tenant-empty-state">No open maintenance requests.</p>}
+        </article>
+
+        <article className="tenant-dashboard-section">
+          <div className="tenant-section-heading"><div><span>Account activity</span><h3>Recent payments</h3></div><button type="button" onClick={() => onNavigate("Payments")}>View all</button></div>
+          {recentPayments.length ? recentPayments.map((payment) => <div className="tenant-list-row" key={payment.id}><span><strong>{formatMoney(payment.amount, currency)}</strong><small>{payment.paidAt ? formatDateTime(payment.paidAt) : "Date unavailable"}</small></span><span>{payment.status}</span></div>) : <p className="tenant-empty-state">No payment activity has been recorded.</p>}
+        </article>
+
+        {notifications[0] && <article className="tenant-dashboard-section tenant-notice"><div className="tenant-section-heading"><div><span>Latest update</span><h3>{notifications[0].template}</h3></div></div>{typeof notifications[0].payload?.body === "string" && <p>{notifications[0].payload.body}</p>}</article>}
+      </div>
+    </section>
+  );
+}
+
 function MessagingCenter({ role, threads, messages, notifications, onLoadThread, onSendMessage, onSendPushAlert }: { role: Role; threads: ServerThread[]; messages: AppChatMessage[]; notifications: ServerNotification[]; onLoadThread: (threadId: string) => void; onSendMessage: (threadId: string, body: string, attachmentUrls?: string[]) => void; onSendPushAlert: (message: string, propertyId?: string) => Promise<void> }) {
   const [activeThreadId, setActiveThreadId] = useState(threads[0]?.id ?? "");
   const [draft, setDraft] = useState("");
@@ -2762,6 +2844,7 @@ function AdminPage({ role, properties, accessToken }: { role: Role; properties: 
 
 function TabContent({
   role,
+  currentUser,
   activeTab,
   onNavigate,
   currency,
@@ -2800,6 +2883,7 @@ function TabContent({
   accessToken
 }: {
   role: Role;
+  currentUser: BackendUser | null;
   activeTab: Tab;
   onNavigate: (tab: Tab) => void;
   currency: Currency;
@@ -2837,6 +2921,9 @@ function TabContent({
   onCheckOutVisitor: (id: string) => Promise<VisitorPassRecord | null>;
   accessToken: string | null;
 }) {
+  if (activeTab === "Overview" && role === "Tenant") {
+    return <TenantHomeDashboard user={currentUser} units={units.filter((unit) => unit.tenantId === currentUser?.id)} payments={payments} maintenance={maintenanceData} notifications={notifications} currency={currency} onNavigate={onNavigate} />;
+  }
   if (activeTab === "Overview") return <OverviewPage role={role} onNavigate={onNavigate} currency={currency} onSendPushAlert={onSendPushAlert} properties={properties} units={units} visitorRecords={visitorRecords} onSaveVisitorRecord={onSaveVisitorRecord} onUpdateVisitorRecord={onUpdateVisitorRecord} />;
   if (activeTab === "Properties") return <PropertiesPage role={role} currency={currency} properties={properties} units={units} tenants={tenants} expenses={expenses} onCreateListing={onCreateListing} onCreateUnit={onCreateUnit} onCreateTenant={onCreateTenant} onUpdateUnit={onUpdateUnit} onRecordExpense={onRecordExpense} onUploadAgreementTemplate={onUploadAgreementTemplate} onGenerateLeaseDocuments={onGenerateLeaseDocuments} />;
   if (activeTab === "Payments") return <PaymentsPage role={role} currency={currency} payments={payments} onMakePayment={onMakePayment} onApprovePayment={onApprovePayment} />;
@@ -2876,11 +2963,13 @@ function LandingPage({ onSelectMode }: { onSelectMode: (mode: "login" | "signup"
           <article className="choice-card">
             <div className="choice-icon"><Lock /></div>
             <h2>Sign in</h2>
+            <p>Already have an account?</p>
             <button className="primary-action" onClick={() => onSelectMode("login")}>Sign in</button>
           </article>
           <article className="choice-card highlighted">
             <div className="choice-icon"><User /></div>
             <h2>Sign up</h2>
+            <p>New Tenant</p>
             <button className="primary-action" onClick={() => onSelectMode("signup")}>Sign up</button>
           </article>
         </div>
@@ -3708,6 +3797,7 @@ function AppShell() {
 
         <TabContent
           role={role}
+          currentUser={currentUser}
           activeTab={activeTab}
           onNavigate={switchTab}
           currency={currency}
