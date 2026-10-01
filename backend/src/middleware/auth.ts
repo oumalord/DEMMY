@@ -13,7 +13,11 @@ declare global {
   }
 }
 
-const jwtSecret = process.env.JWT_SECRET ?? "rentflow-development-secret";
+const jwtSecret = process.env.JWT_SECRET ?? (process.env.NODE_ENV === "production" ? "" : "rentflow-development-secret");
+
+if (!jwtSecret) {
+  throw new Error("JWT_SECRET must be configured in production.");
+}
 
 export function signAccessToken(user: User) {
   return jwt.sign({ sub: user.id, role: user.role, email: user.email }, jwtSecret, { expiresIn: "2h" });

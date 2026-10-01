@@ -4,6 +4,7 @@
   background: #08111f;
   color: #e5edf7;
   font-feature-settings: "cv02", "cv03";
+  --rentflow-hero-image: url("https://images.unsplash.com/photo-1494526585095-c41746248156?auto=format&fit=crop&w=1800&q=80");
   text-rendering: optimizeLegibility;
 }
 
@@ -29,6 +30,12 @@ body {
     linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
   color: #0f172a;
   overflow: hidden;
+}
+
+.auth-screen {
+  background:
+    linear-gradient(120deg, rgba(15, 23, 42, .76), rgba(15, 23, 42, .42)),
+    var(--rentflow-hero-image) center / cover fixed;
 }
 
 .landing-card,
@@ -571,7 +578,7 @@ svg {
   border-radius: 8px;
   background:
     linear-gradient(120deg, rgba(15, 23, 42, .88), rgba(15, 23, 42, .62)),
-    url("https://images.unsplash.com/photo-1494526585095-c41746248156?auto=format&fit=crop&w=1800&q=80");
+    var(--rentflow-hero-image);
   background-size: cover;
   background-position: center;
   border: 1px solid rgba(148, 163, 184, .22);

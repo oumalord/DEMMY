@@ -1051,8 +1051,10 @@ export async function dashboardMetrics(user: User) {
   };
 }
 
-export async function listVisitorRecords(propertyId?: string) {
-  let sql = `
+export async function listVisitorRecords(propertyIds: string[]) {
+  if (propertyIds.length === 0) return [];
+  const result = await query(
+    `
     select id,
            visitor_name as "visitorName",
            phone,
@@ -1064,20 +1066,29 @@ export async function listVisitorRecords(propertyId?: string) {
            property_id as "propertyId",
            (select name from properties where id = visitor_passes.property_id) as "propertyName",
            unit_id as "unitId",
+           (select label from units where id = visitor_passes.unit_id) as "unitLabel",
            floor,
            house_number as "houseNumber",
            status,
            created_at as "createdAt"
     from visitor_passes
-  `;
-  
-  if (propertyId) {
-    sql += ` where property_id = $1`;
-  }
-  
-  sql += ` order by created_at desc`;
-  
-  const result = await query(sql, propertyId ? [propertyId] : []);
+    where property_id = any($1::uuid[])
+    order by created_at desc
+  `,
+    [propertyIds]
+  );
+  return result.rows;
+}
+
+export async function listPublicVisitorOptions(propertyId: string) {
+  const result = await query(
+    `select p.id as "propertyId", p.name as "propertyName", u.id as "unitId", u.label as "unitLabel"
+     from properties p
+     join units u on u.property_id = p.id
+     where p.id = $1
+     order by u.label asc`,
+    [propertyId]
+  );
   return result.rows;
 }
 
@@ -1086,15 +1097,21 @@ export async function createVisitorRecord(input: {
   phone: string;
   email?: string;
   reason: string;
-  checkIn: string;
+  checkIn?: string;
   checkOut?: string;
   destination: string;
-  propertyId?: string;
-  unitId?: string;
+  propertyId: string;
+  unitId: string;
   floor?: string;
   houseNumber?: string;
   status?: string;
 }) {
+  const unit = await query<{ id: string }>(
+    "select id from units where id = $1 and property_id = $2",
+    [input.unitId, input.propertyId]
+  );
+  if (!unit.rows[0]) throw new Error("Select a valid unit belonging to this property.");
+
   const result = await query(
     `insert into visitor_passes (
        visitor_name, phone, email, reason,
@@ -1115,6 +1132,7 @@ export async function createVisitorRecord(input: {
        property_id as "propertyId",
        (select name from properties where id = visitor_passes.property_id) as "propertyName",
        unit_id as "unitId",
+      (select label from units where id = visitor_passes.unit_id) as "unitLabel",
        floor,
        house_number as "houseNumber",
        status,
@@ -1124,11 +1142,11 @@ export async function createVisitorRecord(input: {
       input.phone,
       input.email || null,
       input.reason,
-      input.checkIn,
+      input.checkIn || null,
       input.checkOut || null,
       input.destination,
-      input.propertyId || null,
-      input.unitId || null,
+      input.propertyId,
+      input.unitId,
       input.floor || null,
       input.houseNumber || null,
       input.status || 'active',
@@ -1225,6 +1243,7 @@ export async function updateVisitorRecord(id: string, input: Partial<{
       property_id as "propertyId",
       (select name from properties where id = visitor_passes.property_id) as "propertyName",
       unit_id as "unitId",
+      (select label from units where id = visitor_passes.unit_id) as "unitLabel",
       floor,
       house_number as "houseNumber",
       status,

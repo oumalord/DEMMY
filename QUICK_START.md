@@ -51,7 +51,7 @@ npm run dev
 
 ## That's it! 🎉
 
-Your app is now connected to **Neon PostgreSQL** with zero Docker overhead.
+Your app is now connected directly to **Neon PostgreSQL**.
 
 ### Next Steps:
 1. ✅ Click "Properties" tab

@@ -14,13 +14,12 @@ import {
   leases,
   maintenanceTickets,
   messageThreads,
-  passwordHashByEmail,
   payments,
   properties,
   units,
   users
 } from "./data/demoData.js";
-import { securityRecords, visitorRecords } from "./data/demoData.js";
+import { securityRecords } from "./data/demoData.js";
 import { authenticate, requireRoles, signAccessToken } from "./middleware/auth.js";
 import { openApiDocument } from "./openapi.js";
 import {
@@ -64,6 +63,7 @@ import {
   createExpense,
   upsertMonthlyRentReminder,
   listVisitorRecords,
+  listPublicVisitorOptions,
   createVisitorRecord,
   updateVisitorRecord
 } from "./repositories.js";
@@ -281,25 +281,22 @@ app.post("/api/auth/login", async (req, res) => {
   const password = String(rawPassword ?? "").trim();
   const device = String(req.body?.device ?? "unknown device");
   const email = String(rawEmail ?? "").trim().toLowerCase();
-  const dbUser = await findUserByEmail(email).catch(() => null);
-  const fallbackUser = users.find((candidate) => candidate.email.toLowerCase() === email) as (User & { passwordHash?: string }) | undefined;
-  const user = dbUser ?? fallbackUser;
-  const hash = dbUser?.passwordHash ?? fallbackUser?.passwordHash ?? passwordHashByEmail[email];
-  console.log("LOGIN ATTEMPT", { email, passwordLength: password.length, device, hasDbUser: Boolean(dbUser), hasFallbackUser: Boolean(fallbackUser), hashFound: Boolean(hash) });
-  const defaultPasswordUsed = password === DEFAULT_ACCOUNT_PASSWORD;
-  const valid = Boolean(user) && (defaultPasswordUsed || (hash ? await bcrypt.compare(password, hash) : false));
-  if (!user || !valid) return res.status(401).json({ error: "Invalid credentials" });
-  const accessToken = signAccessToken(user);
-  if (dbUser) {
-    await createAuditLog(user.id, "LOGIN", "device", device, { source: "api", requiresPasswordChange: defaultPasswordUsed }).catch(() => undefined);
-  } else {
-    auditLogs.push({ id: `aud_${Date.now()}`, actorId: user.id, action: "LOGIN", target: device, createdAt: new Date().toISOString() });
+  let user;
+  try {
+    user = await findUserByEmail(email);
+  } catch {
+    return res.status(503).json({ error: "Login is temporarily unavailable. Please try again shortly." });
   }
+  if (!user || !password || !await bcrypt.compare(password, user.passwordHash)) {
+    return res.status(401).json({ error: "Invalid credentials" });
+  }
+  const accessToken = signAccessToken(user);
+  await createAuditLog(user.id, "LOGIN", "device", device, { source: "api" }).catch(() => undefined);
   res.json({
     accessToken,
     user,
-    requiresPasswordChange: defaultPasswordUsed,
-    storage: dbUser ? "postgres" : "memory-fallback",
+    requiresPasswordChange: false,
+    storage: "postgres",
     session: { device, expiresIn: 7200, mfaRequired: user.mfaEnabled },
     channels: { emailVerified: user.verified, smsVerified: user.verified }
   });
@@ -442,8 +439,12 @@ app.post("/api/units", authenticate, requireRoles("caretaker", "owner", "super_a
 });
 
 app.get("/api/notifications", authenticate, async (req, res) => {
-  const data = await listNotifications(req.user!).catch(() => []);
-  res.json({ data });
+  try {
+    const data = await listNotifications(req.user!);
+    res.json({ data, storage: "postgres" });
+  } catch (error) {
+    res.status(503).json({ error: error instanceof Error ? error.message : "Could not load notices" });
+  }
 });
 
 function fillAgreementTemplate(templateText: string, values: Record<string, string>) {
@@ -557,66 +558,126 @@ app.post("/api/security", authenticate, requireRoles("caretaker", "owner", "supe
   }
 });
 
-app.get("/api/visitors", authenticate, async (req, res) => {
+async function getVisitorPropertyIds(user: User) {
+  const allProperties = await listProperties() as Array<{ id: string; ownerId?: string; managerId?: string }>;
+  return allProperties.filter((property) => user.role === "super_admin" ||
+    (user.role === "caretaker" && property.managerId === user.id) ||
+    (user.role === "owner" && (property.ownerId === user.id || property.managerId === user.id)))
+    .map((property) => String(property.id));
+}
+
+app.get("/api/public/visitor-options/:propertyId", async (req, res) => {
   try {
-    const propertyId = req.query.propertyId as string | undefined;
-    const data = await listVisitorRecords(propertyId).catch(() => []);
+    const data = await listPublicVisitorOptions(String(req.params.propertyId));
+    if (data.length === 0) return res.status(404).json({ error: "No units are available for this property." });
     res.json({ data });
   } catch (error) {
-    res.json({ data: [], error: error instanceof Error ? error.message : "Failed to load visitor records" });
+    res.status(503).json({ error: error instanceof Error ? error.message : "Could not load visitor application details." });
+  }
+});
+
+app.post("/api/public/visitor-applications", async (req, res) => {
+  try {
+    const visitorName = String(req.body.visitorName ?? "").trim();
+    const phone = String(req.body.phone ?? "").trim();
+    const email = String(req.body.email ?? "").trim().toLowerCase();
+    const reason = String(req.body.reason ?? "").trim();
+    const destination = String(req.body.destination ?? "").trim();
+    const propertyId = String(req.body.propertyId ?? "");
+    const unitId = String(req.body.unitId ?? "");
+    if (!visitorName || !phone || !email || !reason || !destination || !propertyId || !unitId || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ error: "Enter your name, phone, valid email, reason for visit, destination, and a valid property/unit." });
+    }
+    const dbRecord = await createVisitorRecord({
+      visitorName,
+      phone,
+      email,
+      reason,
+      destination,
+      propertyId,
+      unitId,
+      floor: req.body.floor ? String(req.body.floor) : undefined,
+      houseNumber: req.body.houseNumber ? String(req.body.houseNumber) : undefined,
+      status: "pending"
+    });
+    res.status(201).json({ data: dbRecord, storage: "postgres" });
+  } catch (error) {
+    res.status(503).json({ error: error instanceof Error ? error.message : "Could not submit visitor application." });
+  }
+});
+
+app.get("/api/visitors", authenticate, async (req, res) => {
+  if (req.user!.role === "tenant") return res.json({ data: [], storage: "postgres" });
+  try {
+    const allowedPropertyIds = await getVisitorPropertyIds(req.user!);
+    const requestedPropertyId = req.query.propertyId ? String(req.query.propertyId) : undefined;
+    const data = await listVisitorRecords(allowedPropertyIds.filter((id) => !requestedPropertyId || id === requestedPropertyId));
+    res.json({ data, storage: "postgres" });
+  } catch (error) {
+    res.status(503).json({ error: error instanceof Error ? error.message : "Could not load visitor records." });
   }
 });
 
 app.post("/api/visitors", authenticate, requireRoles("caretaker", "owner", "super_admin"), async (req, res) => {
   try {
-    const dbRecord = await createVisitorRecord({
-      visitorName: String(req.body.visitorName ?? ""),
-      phone: String(req.body.phone ?? ""),
-      email: req.body.email ? String(req.body.email) : undefined,
-      reason: String(req.body.reason ?? ""),
+    const record = await createVisitorRecord({
+      visitorName: String(req.body.visitorName ?? "").trim(),
+      phone: String(req.body.phone ?? "").trim(),
+      email: req.body.email ? String(req.body.email).trim().toLowerCase() : undefined,
+      reason: String(req.body.reason ?? "").trim(),
       checkIn: String(req.body.checkIn ?? new Date().toISOString()),
       checkOut: req.body.checkOut ? String(req.body.checkOut) : undefined,
-      destination: String(req.body.destination ?? ""),
+      destination: String(req.body.destination ?? "").trim(),
       propertyId: String(req.body.propertyId ?? ""),
       unitId: String(req.body.unitId ?? ""),
       floor: req.body.floor ? String(req.body.floor) : undefined,
       houseNumber: req.body.houseNumber ? String(req.body.houseNumber) : undefined,
       status: req.body.status ? String(req.body.status) : "active"
-    }).catch(() => null);
-    
-    if (dbRecord) {
-      await createAuditLog(req.user!.id, "CREATE_VISITOR", "visitor", req.body.visitorName).catch(() => undefined);
-      return res.status(201).json({ data: dbRecord, storage: "postgres" });
-    }
-
-    const record = {
-      id: `visitor_${Date.now()}`,
-      visitorName: String(req.body.visitorName ?? ""),
-      phone: String(req.body.phone ?? ""),
-      email: req.body.email ? String(req.body.email) : "",
-      reason: String(req.body.reason ?? ""),
-      checkIn: String(req.body.checkIn ?? new Date().toISOString()),
-      checkOut: req.body.checkOut ? String(req.body.checkOut) : "",
-      destination: String(req.body.destination ?? ""),
-      propertyId: String(req.body.propertyId ?? ""),
-      propertyName: req.body.propertyName ? String(req.body.propertyName) : "",
-      unitId: String(req.body.unitId ?? ""),
-      floor: req.body.floor ? String(req.body.floor) : "",
-      houseNumber: req.body.houseNumber ? String(req.body.houseNumber) : "",
-      status: req.body.status ? String(req.body.status) : "active",
-      createdAt: new Date().toISOString()
-    };
-    visitorRecords.unshift(record);
-    await createAuditLog(req.user!.id, "CREATE_VISITOR", "visitor", req.body.visitorName).catch(() => undefined);
-    return res.status(201).json({ data: record, storage: "memory-fallback" });
+    });
+    await createAuditLog(req.user!.id, "CREATE_VISITOR", "visitor", String(req.body.visitorName ?? "").trim()).catch(() => undefined);
+    res.status(201).json({ data: record, storage: "postgres" });
   } catch (error) {
-    return res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
+    res.status(400).json({ error: error instanceof Error ? error.message : "Could not save visitor pass." });
+  }
+});
+
+app.post("/api/visitors/:id/check-out", authenticate, requireRoles("caretaker", "owner", "super_admin"), async (req, res) => {
+  const checkedOutAt = new Date().toISOString();
+  try {
+    const visibleRecords = await listVisitorRecords(await getVisitorPropertyIds(req.user!));
+    const visitor = visibleRecords.find((record) => record.id === String(req.params.id));
+    if (!visitor) return res.status(404).json({ error: "Visitor pass not found." });
+    if (visitor.status !== "active") return res.status(409).json({ error: "Only checked-in visitors can be checked out." });
+    const record = await updateVisitorRecord(String(req.params.id), { checkOut: checkedOutAt, status: "checked-out" });
+    if (!record) return res.status(404).json({ error: "Visitor pass not found." });
+    await createAuditLog(req.user!.id, "CHECK_OUT_VISITOR", "visitor", String(req.params.id)).catch(() => undefined);
+    res.json({ data: record, storage: "postgres" });
+  } catch (error) {
+    res.status(503).json({ error: error instanceof Error ? error.message : "Could not check out visitor." });
+  }
+});
+
+app.post("/api/visitors/:id/check-in", authenticate, requireRoles("caretaker", "owner", "super_admin"), async (req, res) => {
+  const checkedInAt = new Date().toISOString();
+  try {
+    const visibleRecords = await listVisitorRecords(await getVisitorPropertyIds(req.user!));
+    const visitor = visibleRecords.find((record) => record.id === String(req.params.id));
+    if (!visitor) return res.status(404).json({ error: "Visitor pass not found." });
+    if (visitor.status !== "pending") return res.status(409).json({ error: "Only pending applications can be checked in." });
+    const record = await updateVisitorRecord(String(req.params.id), { checkIn: checkedInAt, status: "active" });
+    if (!record) return res.status(404).json({ error: "Visitor pass not found." });
+    await createAuditLog(req.user!.id, "CHECK_IN_VISITOR", "visitor", String(req.params.id)).catch(() => undefined);
+    res.json({ data: record, storage: "postgres" });
+  } catch (error) {
+    res.status(503).json({ error: error instanceof Error ? error.message : "Could not check in visitor." });
   }
 });
 
 app.put("/api/visitors/:id", authenticate, requireRoles("caretaker", "owner", "super_admin"), async (req, res) => {
   try {
     const id = String(req.params.id);
+    const visibleRecords = await listVisitorRecords(await getVisitorPropertyIds(req.user!));
+    if (!visibleRecords.some((record) => record.id === id)) return res.status(404).json({ error: "Visitor record not found." });
     const dbRecord = await updateVisitorRecord(id, {
       visitorName: req.body.visitorName ? String(req.body.visitorName) : undefined,
       phone: req.body.phone ? String(req.body.phone) : undefined,
@@ -630,33 +691,10 @@ app.put("/api/visitors/:id", authenticate, requireRoles("caretaker", "owner", "s
       floor: req.body.floor ? String(req.body.floor) : undefined,
       houseNumber: req.body.houseNumber ? String(req.body.houseNumber) : undefined,
       status: req.body.status ? String(req.body.status) : undefined
-    }).catch(() => null);
-
-    if (dbRecord) {
-      await createAuditLog(req.user!.id, "UPDATE_VISITOR", "visitor", id).catch(() => undefined);
-      return res.json({ data: dbRecord, storage: "postgres" });
-    }
-
-    const record = visitorRecords.find((r) => (r as any).id === id);
-    if (!record) return res.status(404).json({ error: "Visitor record not found" });
-
-    Object.assign(record, {
-      visitorName: req.body.visitorName ?? (record as any).visitorName,
-      phone: req.body.phone ?? (record as any).phone,
-      email: req.body.email ?? (record as any).email,
-      reason: req.body.reason ?? (record as any).reason,
-      checkIn: req.body.checkIn ?? (record as any).checkIn,
-      checkOut: req.body.checkOut ?? (record as any).checkOut,
-      destination: req.body.destination ?? (record as any).destination,
-      propertyId: req.body.propertyId ?? (record as any).propertyId,
-      propertyName: req.body.propertyName ?? (record as any).propertyName,
-      floor: req.body.floor ?? (record as any).floor,
-      houseNumber: req.body.houseNumber ?? (record as any).houseNumber,
-      status: req.body.status ?? (record as any).status
     });
-
+    if (!dbRecord) return res.status(404).json({ error: "Visitor record not found." });
     await createAuditLog(req.user!.id, "UPDATE_VISITOR", "visitor", id).catch(() => undefined);
-    return res.json({ data: record, storage: "memory-fallback" });
+    return res.json({ data: dbRecord, storage: "postgres" });
   } catch (error) {
     return res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
   }
@@ -1137,25 +1175,26 @@ app.post("/api/notifications", authenticate, requireRoles("caretaker", "owner", 
   const channels = req.body.channels ?? ["sms", "email", "push"];
   const propertyId = req.body.propertyId;
   const payload = { ...req.body.payload, propertyId };
-  const queued = await Promise.all(channels.map((channel: "sms" | "email" | "push" | "whatsapp") =>
-    createNotification(req.user!, {
-      userId: req.body.userId,
-      channel,
-      template: req.body.template ?? req.body.message ?? "RentFlow notification",
-      payload: payload,
-      propertyId: propertyId
-    }).catch(() => null)
-  ));
-  const pushed = queued.filter(Boolean);
-  if (pushed.length > 0) {
-    broadcastRealtime({ type: "notification.sent", notifications: pushed });
+  try {
+    const queued = await Promise.all(channels.map((channel: "sms" | "email" | "push" | "whatsapp") =>
+      createNotification(req.user!, {
+        userId: req.body.userId,
+        channel,
+        template: req.body.template ?? req.body.message ?? "RentFlow notification",
+        payload,
+        propertyId
+      })
+    ));
+    broadcastRealtime({ type: "notification.sent", notifications: queued });
+    res.status(202).json({
+      status: "queued",
+      data: queued,
+      channels,
+      integrations: ["Twilio", "SendGrid", "Firebase Cloud Messaging", "WhatsApp Business"]
+    });
+  } catch (error) {
+    res.status(503).json({ error: error instanceof Error ? error.message : "Could not save notice" });
   }
-  res.status(202).json({
-    status: "queued",
-    data: pushed,
-    channels,
-    integrations: ["Twilio", "SendGrid", "Firebase Cloud Messaging", "WhatsApp Business"]
-  });
 });
 
 app.get("/api/ai/insights", authenticate, async (_req, res) => {

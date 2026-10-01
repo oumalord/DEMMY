@@ -11,8 +11,10 @@ ALTER TABLE visitor_passes
   ADD COLUMN IF NOT EXISTS property_id UUID REFERENCES properties(id),
   ADD COLUMN IF NOT EXISTS floor TEXT,
   ADD COLUMN IF NOT EXISTS house_number TEXT,
-  ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active',
+  ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'pending',
   ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
+
+ALTER TABLE visitor_passes ALTER COLUMN status SET DEFAULT 'pending';
 
 -- Drop old unnecessary columns if they exist (optional - keep for backward compatibility)
 -- ALTER TABLE visitor_passes DROP COLUMN expires_at;

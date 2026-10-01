@@ -258,10 +258,21 @@ CREATE TABLE visitor_passes (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   unit_id UUID NOT NULL REFERENCES units(id),
   visitor_name TEXT NOT NULL,
+  phone TEXT,
+  email TEXT,
+  reason TEXT,
+  check_in_at TIMESTAMPTZ,
+  check_out_at TIMESTAMPTZ,
+  destination TEXT,
+  property_id UUID REFERENCES properties(id),
+  floor TEXT,
+  house_number TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
   qr_token TEXT NOT NULL UNIQUE,
   expires_at TIMESTAMPTZ NOT NULL,
   checked_in_at TIMESTAMPTZ,
-  checked_out_at TIMESTAMPTZ
+  checked_out_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE caretaker_checkins (

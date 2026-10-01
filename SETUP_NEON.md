@@ -1,6 +1,6 @@
-# RentFlow Setup Guide - Neon PostgreSQL (No Docker)
+# RentFlow Setup Guide - Neon PostgreSQL
 
-This guide sets up RentFlow to use Neon.com PostgreSQL without Docker.
+This guide sets up RentFlow to use Neon.com PostgreSQL directly.
 
 ## Prerequisites
 
@@ -38,17 +38,7 @@ psql "postgresql://neondb_owner:npg_nGWSs5OCjl9U@ep-round-frog-aylyv6uk-pooler.c
 \q
 ```
 
-## Step 2: Start Redis (if using locally)
-
-```bash
-# Using Docker for just Redis
-docker run -d -p 6379:6379 redis:7-alpine
-
-# Or install Redis locally and run:
-redis-server
-```
-
-## Step 3: Install Dependencies
+## Step 2: Install Dependencies
 
 ```bash
 # Install backend dependencies
@@ -62,7 +52,7 @@ npm install
 cd ..
 ```
 
-## Step 4: Start the Backend
+## Step 3: Start the Backend
 
 ```bash
 cd backend
@@ -75,7 +65,7 @@ Server running on port 4000
 Connected to database: neondb
 ```
 
-## Step 5: Start the Frontend
+## Step 4: Start the Frontend
 
 In a new terminal:
 
@@ -92,7 +82,7 @@ VITE v4.x.x  ready in xxx ms
 ➜  press h to show help
 ```
 
-## Step 6: Open the App
+## Step 5: Open the App
 
 Open your browser to: **http://localhost:5173**
 
@@ -167,9 +157,8 @@ Before deploying:
 1. Set strong `JWT_SECRET` in environment variables
 2. Use `NODE_ENV=production`
 3. Set `VITE_API_URL` to your production API domain
-4. Use a managed Redis service (e.g., Redis Cloud)
-5. Enable SSL/TLS for all connections
-6. Set up proper error logging
+4. Enable SSL/TLS for all connections
+5. Set up proper error logging
 
 ## Quick Start (One Liner)
 

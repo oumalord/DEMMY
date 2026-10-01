@@ -7,33 +7,11 @@ Why PostgreSQL:
 - RentFlow data is relational: users, properties, units, leases, payments, expenses, maintenance, reports, messages, and audit logs all connect to each other.
 - PostgreSQL supports transactions for rent payments, leases, expense approvals, and receipts.
 - It has strong indexing, JSONB fields for flexible metadata, and works well for SaaS multi-tenant systems.
-- It is easy to run locally with Docker and deploy later on AWS RDS, Azure Database for PostgreSQL, Google Cloud SQL, Supabase, Neon, or Railway.
-
-## Local Setup With Docker
-
-From the project root:
-
-```powershell
-cd "C:\Users\Sir. Lord's\Documents\DEMMY"
-docker compose up -d postgres redis
-```
-
-The database URL is:
-
-```text
-postgres://rentflow:rentflow_dev_password@localhost:5432/rentflow
-```
-
-Docker Compose automatically loads:
-
-```text
-database/schema.sql
-database/seed.sql
-```
+- It is easy to run locally with an installed PostgreSQL client and deploy later on AWS RDS, Azure Database for PostgreSQL, Google Cloud SQL, Supabase, Neon, or Railway.
 
 ## Local Setup With Installed PostgreSQL On Windows
 
-Your machine already appears to have PostgreSQL installed as a Windows service. Use this path if Docker is not available:
+Use an installed PostgreSQL service or connect directly to Neon:
 
 ```powershell
 cd "C:\Users\Sir. Lord's\Documents\DEMMY"

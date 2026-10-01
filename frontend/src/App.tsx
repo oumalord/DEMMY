@@ -38,6 +38,7 @@ import { useEffect, useMemo, useRef, useState, ChangeEvent } from "react";
 declare global {
   interface ImportMetaEnv {
     readonly VITE_API_URL?: string;
+    readonly DEV?: boolean;
   }
 
   interface ImportMeta {
@@ -62,7 +63,8 @@ import {
   YAxis
 } from "recharts";
 
-const apiBaseUrl = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
+const configuredApiUrl = import.meta.env.VITE_API_URL?.trim();
+const apiBaseUrl = configuredApiUrl ?? (import.meta.env.DEV ? "http://localhost:4000" : "");
 
 type UserRole = "tenant" | "caretaker" | "owner" | "super_admin";
 
@@ -134,6 +136,14 @@ interface ServerNotification {
   createdAt: string;
 }
 
+function mergeNotifications(current: ServerNotification[], incoming: ServerNotification[]) {
+  const byId = new Map<string, ServerNotification>();
+  for (const notification of [...incoming, ...current]) {
+    byId.set(notification.id, notification);
+  }
+  return Array.from(byId.values()).sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+}
+
 interface ServerPayment {
   id: string;
   tenantId: string;
@@ -196,19 +206,20 @@ interface ServerSecurityRecord {
 
 interface VisitorPassRecord {
   id: string;
+  unitId?: string;
   visitorName: string;
   phone: string;
   email: string;
   reason: string;
-  checkIn: string;
-  checkOut: string;
+  checkIn?: string;
+  checkOut?: string;
   destination: string;
   propertyId?: string;
   propertyName: string;
   unitLabel?: string;
   floor?: string;
   houseNumber?: string;
-  status: "active" | "checked-out";
+  status: "pending" | "active" | "checked-out";
   createdAt: string;
 }
 
@@ -229,12 +240,36 @@ function getAuthHeaders(token: string | null): Record<string, string> | undefine
 }
 
 async function fetchJson<T>(path: string, options: RequestInit = {}) {
-  const response = await fetch(`${apiBaseUrl}${path}`, options);
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(text || response.statusText);
+  if (!apiBaseUrl) {
+    throw new Error("The production API is not configured. Set VITE_API_URL in the Vercel project environment variables and redeploy.");
   }
-  return response.json() as Promise<T>;
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), 20_000);
+  try {
+    const response = await fetch(`${apiBaseUrl}${path}`, { ...options, signal: options.signal ?? controller.signal });
+    if (!response.ok) {
+      const text = await response.text();
+      let message = text || response.statusText;
+      try {
+        const body = JSON.parse(text) as { error?: string; message?: string };
+        message = body.error ?? body.message ?? message;
+      } catch {
+        // Keep the response text when the server did not return JSON.
+      }
+      throw new Error(message || `Request failed (${response.status}).`);
+    }
+    return response.json() as Promise<T>;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error("The server did not respond within 20 seconds. Check the API deployment and try again.");
+    }
+    if (error instanceof TypeError) {
+      throw new Error("Could not reach the server. Check the API URL, deployment status, and CORS settings.");
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
 }
 
 function formatDateTime(iso: string) {
@@ -273,7 +308,7 @@ function BrandLogo({ className = "brand-mark" }: { className?: string }) {
 }
 
 type Role = "Tenant" | "Management" | "Owner" | "Super Admin";
-type Tab = "Overview" | "Properties" | "Payments" | "Maintenance" | "Messaging" | "Notices" | "Reports" | "Security" | "Admin" | "Profile" | "Sign Out";
+type Tab = "Overview" | "Properties" | "Payments" | "Maintenance" | "Messaging" | "Notices" | "Visitors" | "Reports" | "Security" | "Admin" | "Profile" | "Sign Out";
 type Currency = "USD" | "KES";
 
 const roles: Role[] = ["Tenant", "Management", "Owner", "Super Admin"];
@@ -285,6 +320,7 @@ const tabIcons: Record<Tab, typeof Home> = {
   Maintenance: Wrench,
   Messaging: MessageSquare,
   Notices: Megaphone,
+  Visitors: Users,
   Reports: FileText,
   Security: ShieldCheck,
   Admin: UserCog,
@@ -299,6 +335,7 @@ const navItems: Array<[typeof Home, Tab]> = [
   [tabIcons.Maintenance, "Maintenance"],
   [tabIcons.Messaging, "Messaging"],
   [tabIcons.Notices, "Notices"],
+  [tabIcons.Visitors, "Visitors"],
   [tabIcons.Reports, "Reports"],
   [tabIcons.Security, "Security"],
   [tabIcons.Admin, "Admin"],
@@ -308,9 +345,9 @@ const navItems: Array<[typeof Home, Tab]> = [
 
 const roleTabs: Record<Role, Tab[]> = {
   Tenant: ["Overview", "Payments", "Maintenance", "Messaging", "Notices", "Reports", "Security", "Profile", "Sign Out"],
-  Management: ["Overview", "Properties", "Payments", "Maintenance", "Messaging", "Notices", "Reports", "Security", "Profile", "Sign Out"],
-  Owner: ["Overview", "Properties", "Payments", "Maintenance", "Messaging", "Notices", "Reports", "Security", "Admin", "Profile", "Sign Out"],
-  "Super Admin": ["Overview", "Properties", "Payments", "Maintenance", "Messaging", "Notices", "Reports", "Security", "Admin", "Profile", "Sign Out"]
+  Management: ["Overview", "Properties", "Payments", "Maintenance", "Messaging", "Notices", "Visitors", "Reports", "Security", "Profile", "Sign Out"],
+  Owner: ["Overview", "Properties", "Payments", "Maintenance", "Messaging", "Notices", "Visitors", "Reports", "Security", "Admin", "Profile", "Sign Out"],
+  "Super Admin": ["Overview", "Properties", "Payments", "Maintenance", "Messaging", "Notices", "Visitors", "Reports", "Security", "Admin", "Profile", "Sign Out"]
 };
 
 const rolePrivileges: Record<Role, string[]> = {
@@ -813,6 +850,7 @@ function OverviewPage({
   currency,
   onSendPushAlert,
   properties,
+  units,
   visitorRecords,
   onSaveVisitorRecord,
   onUpdateVisitorRecord
@@ -822,9 +860,10 @@ function OverviewPage({
   currency: Currency;
   onSendPushAlert: (message: string, propertyId?: string) => void | Promise<void>;
   properties: ServerProperty[];
+  units: ServerUnit[];
   visitorRecords: VisitorPassRecord[];
-  onSaveVisitorRecord: (payload: Omit<VisitorPassRecord, "id" | "createdAt">) => VisitorPassRecord;
-  onUpdateVisitorRecord: (id: string, payload: Partial<VisitorPassRecord>) => void;
+  onSaveVisitorRecord: (payload: Omit<VisitorPassRecord, "id" | "createdAt">) => Promise<VisitorPassRecord | null>;
+  onUpdateVisitorRecord: (id: string, payload: Partial<VisitorPassRecord>) => Promise<VisitorPassRecord | null>;
 }) {
   const [view, setView] = useState<OverviewView>("dashboard");
   const [visitorQr, setVisitorQr] = useState({ code: "", expiresAt: "" });
@@ -838,19 +877,30 @@ function OverviewPage({
     destination: "",
     propertyId: properties[0]?.id ?? "",
     propertyName: properties[0]?.name ?? "",
+    unitId: units.find((unit) => unit.propertyId === properties[0]?.id)?.id ?? "",
     unitLabel: "",
     floor: "",
     houseNumber: "",
-    status: "active" as "active" | "checked-out"
+    status: "active" as "pending" | "active" | "checked-out"
   });
   const [editingVisitorId, setEditingVisitorId] = useState<string | null>(null);
+  const [visitorStatus, setVisitorStatus] = useState("");
+  const [savingVisitor, setSavingVisitor] = useState(false);
   const stats = roleStats[role];
   const isTenant = role === "Tenant";
 
   function generateVisitorQr() {
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-    const code = `VISITOR-${Math.random().toString(36).slice(2, 10).toUpperCase()}-${Date.now()}`;
-    setVisitorQr({ code, expiresAt });
+    const property = properties.find((item) => item.id === visitorForm.propertyId);
+    const unit = units.find((item) => item.id === visitorForm.unitId && item.propertyId === property?.id);
+    if (!property || !unit) {
+      setVisitorStatus("Select a property and unit before generating its visitor QR.");
+      return;
+    }
+    const applicationUrl = new URL(window.location.origin);
+    applicationUrl.searchParams.set("visitor", "apply");
+    applicationUrl.searchParams.set("propertyId", property.id);
+    applicationUrl.searchParams.set("unitId", unit.id);
+    setVisitorQr({ code: applicationUrl.toString(), expiresAt: "" });
   }
 
   async function downloadVisitorQr() {
@@ -862,7 +912,7 @@ function OverviewPage({
       const objectUrl = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = objectUrl;
-      link.download = "visitor-qr.png";
+      link.download = "visitor-application-qr.png";
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -877,7 +927,7 @@ function OverviewPage({
     const url = `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(visitorQr.code)}&size=320x320`;
     const printWindow = window.open("", "PRINT", "width=400,height=500");
     if (!printWindow) return;
-    printWindow.document.write(`<html><head><title>Print visitor QR</title></head><body style=\"display:flex;flex-direction:column;align-items:center;justify-content:center;margin:0;\"><img src=\"${url}\" alt=\"Visitor QR\" style=\"max-width:100%;height:auto;\"/><p style=\"font-family:Arial,sans-serif; margin-top:16px;\">${visitorQr.code}</p></body></html>`);
+    printWindow.document.write(`<html><head><title>Print visitor QR</title></head><body style=\"display:flex;flex-direction:column;align-items:center;justify-content:center;margin:0;\"><img src=\"${url}\" alt=\"Visitor application QR\" style=\"max-width:100%;height:auto;\"/><p style=\"font-family:Arial,sans-serif; margin-top:16px;\">Scan to apply for visitor access</p></body></html>`);
     printWindow.document.close();
     printWindow.focus();
     printWindow.print();
@@ -891,11 +941,12 @@ function OverviewPage({
       phone: record.phone,
       email: record.email,
       reason: record.reason,
-      checkIn: record.checkIn,
-      checkOut: record.checkOut,
+      checkIn: record.checkIn ?? "",
+      checkOut: record.checkOut ?? "",
       destination: record.destination,
       propertyId: record.propertyId ?? properties[0]?.id ?? "",
       propertyName: record.propertyName,
+      unitId: record.unitId ?? "",
       unitLabel: record.unitLabel ?? "",
       floor: record.floor ?? "",
       houseNumber: record.houseNumber ?? "",
@@ -903,10 +954,14 @@ function OverviewPage({
     });
   }
 
-  function handleVisitorSubmit(event: { preventDefault: () => void }) {
+  async function handleVisitorSubmit(event: { preventDefault: () => void }) {
     event.preventDefault();
-    if (!visitorForm.visitorName || !visitorForm.phone || !visitorForm.reason || !visitorForm.destination || !visitorForm.checkIn) return;
-    const property = properties.find((item) => item.id === visitorForm.propertyId) ?? properties[0];
+    const property = properties.find((item) => item.id === visitorForm.propertyId);
+    const unit = units.find((item) => item.id === visitorForm.unitId && item.propertyId === property?.id);
+    if (!visitorForm.visitorName || !visitorForm.phone || !visitorForm.email || !visitorForm.reason || !visitorForm.destination || (visitorForm.status !== "pending" && !visitorForm.checkIn) || !property || !unit) {
+      setVisitorStatus("Complete the visitor details and select a valid property and unit.");
+      return;
+    }
     const nextRecord = {
       visitorName: visitorForm.visitorName,
       phone: visitorForm.phone,
@@ -915,36 +970,40 @@ function OverviewPage({
       checkIn: visitorForm.checkIn,
       checkOut: visitorForm.checkOut,
       destination: visitorForm.destination,
-      propertyId: property?.id,
-      propertyName: property?.name ?? visitorForm.propertyName,
-      unitLabel: visitorForm.unitLabel,
+      propertyId: property.id,
+      propertyName: property.name,
+      unitId: unit.id,
+      unitLabel: unit.label,
       floor: visitorForm.floor,
       houseNumber: visitorForm.houseNumber,
       status: visitorForm.status
     };
 
-    if (editingVisitorId) {
-      onUpdateVisitorRecord(editingVisitorId, nextRecord);
+    setSavingVisitor(true);
+    setVisitorStatus("Saving visitor pass...");
+    try {
+      const savedRecord = editingVisitorId
+        ? await onUpdateVisitorRecord(editingVisitorId, nextRecord)
+        : await onSaveVisitorRecord(nextRecord);
+      if (!savedRecord) {
+        setVisitorStatus("Could not save visitor pass. Check your connection and try again.");
+        return;
+      }
       setEditingVisitorId(null);
-    } else {
-      onSaveVisitorRecord(nextRecord);
+      setVisitorStatus("Visitor pass saved.");
+      const firstProperty = properties[0];
+      setVisitorForm({
+        visitorName: "", phone: "", email: "", reason: "",
+        checkIn: new Date().toISOString().slice(0, 16), checkOut: "", destination: "",
+        propertyId: firstProperty?.id ?? "", propertyName: firstProperty?.name ?? "",
+        unitId: units.find((item) => item.propertyId === firstProperty?.id)?.id ?? "",
+        unitLabel: "", floor: "", houseNumber: "", status: "active"
+      });
+    } catch (error) {
+      setVisitorStatus(error instanceof Error ? error.message : "Could not save visitor pass.");
+    } finally {
+      setSavingVisitor(false);
     }
-
-    setVisitorForm({
-      visitorName: "",
-      phone: "",
-      email: "",
-      reason: "",
-      checkIn: new Date().toISOString().slice(0, 16),
-      checkOut: "",
-      destination: "",
-      propertyId: properties[0]?.id ?? "",
-      propertyName: properties[0]?.name ?? "",
-      unitLabel: "",
-      floor: "",
-      houseNumber: "",
-      status: "active"
-    });
   }
 
   const expiresAt = visitorQr.expiresAt ? new Date(visitorQr.expiresAt) : null;
@@ -974,9 +1033,9 @@ function OverviewPage({
                 {visitorQr.code && (
                   <>
                     <div className={`qr-panel ${isExpired ? "expired" : "active"}`}>
-                      <strong>Visitor access code</strong>
+                      <strong>Visitor application link</strong>
                       <code>{visitorQr.code}</code>
-                      <span>{isExpired ? "Expired" : `Expires ${expiresAt?.toLocaleString()}`}</span>
+                      <span>Scan to open the application form</span>
                     </div>
                     <div className="qr-actions">
                       <button className="secondary-action" onClick={downloadVisitorQr}><Download /> Download QR</button>
@@ -1004,29 +1063,38 @@ function OverviewPage({
             </div>
             <form onSubmit={handleVisitorSubmit} className="form-panel">
               <div className="property-form-grid">
-                <label>Visitor name<input value={visitorForm.visitorName} onChange={(event) => setVisitorForm({ ...visitorForm, visitorName: event.target.value })} placeholder="John Kamau" /></label>
-                <label>Contact number<input value={visitorForm.phone} onChange={(event) => setVisitorForm({ ...visitorForm, phone: event.target.value })} placeholder="+254700111222" /></label>
-                <label>Email<input value={visitorForm.email} onChange={(event) => setVisitorForm({ ...visitorForm, email: event.target.value })} placeholder="john@email.com" /></label>
-                <label>Reason for visit<textarea value={visitorForm.reason} onChange={(event) => setVisitorForm({ ...visitorForm, reason: event.target.value })} placeholder="Deliveries, maintenance, family visit..." /></label>
+                <label>Visitor name<input required value={visitorForm.visitorName} onChange={(event) => setVisitorForm({ ...visitorForm, visitorName: event.target.value })} placeholder="John Kamau" /></label>
+                <label>Contact number<input required value={visitorForm.phone} onChange={(event) => setVisitorForm({ ...visitorForm, phone: event.target.value })} placeholder="+254700111222" /></label>
+                <label>Email<input required type="email" value={visitorForm.email} onChange={(event) => setVisitorForm({ ...visitorForm, email: event.target.value })} placeholder="john@email.com" /></label>
+                <label>Reason for visit<textarea required value={visitorForm.reason} onChange={(event) => setVisitorForm({ ...visitorForm, reason: event.target.value })} placeholder="Deliveries, maintenance, family visit..." /></label>
                 <label>Check-in datetime<input type="datetime-local" value={visitorForm.checkIn} onChange={(event) => setVisitorForm({ ...visitorForm, checkIn: event.target.value })} /></label>
                 <label>Check-out datetime<input type="datetime-local" value={visitorForm.checkOut} onChange={(event) => setVisitorForm({ ...visitorForm, checkOut: event.target.value })} /></label>
-                <label>Destination<input value={visitorForm.destination} onChange={(event) => setVisitorForm({ ...visitorForm, destination: event.target.value })} placeholder="Unit A-12 / Gate-house / Manager office" /></label>
-                <label>Property<select value={visitorForm.propertyId} onChange={(event) => {
+                <label>Destination<input required value={visitorForm.destination} onChange={(event) => setVisitorForm({ ...visitorForm, destination: event.target.value })} placeholder="Unit A-12 / Gate-house / Manager office" /></label>
+                <label>Property<select required value={visitorForm.propertyId} onChange={(event) => {
                   const nextProperty = properties.find((item) => item.id === event.target.value);
-                  setVisitorForm({ ...visitorForm, propertyId: event.target.value, propertyName: nextProperty?.name ?? "" });
+                  const nextUnit = units.find((item) => item.propertyId === event.target.value);
+                  setVisitorForm({ ...visitorForm, propertyId: event.target.value, propertyName: nextProperty?.name ?? "", unitId: nextUnit?.id ?? "", unitLabel: nextUnit?.label ?? "" });
                 }}>
                   <option value="">Select property</option>
                   {properties.map((property) => <option key={property.id} value={property.id}>{property.name}</option>)}
                 </select></label>
-                <label>House / unit number<input value={visitorForm.unitLabel} onChange={(event) => setVisitorForm({ ...visitorForm, unitLabel: event.target.value })} placeholder="A-12" /></label>
+                <label>House / unit number<select required value={visitorForm.unitId} onChange={(event) => {
+                  const unit = units.find((item) => item.id === event.target.value);
+                  setVisitorForm({ ...visitorForm, unitId: event.target.value, unitLabel: unit?.label ?? "" });
+                }}>
+                  <option value="">{units.some((item) => item.propertyId === visitorForm.propertyId) ? "Select unit" : "No units available"}</option>
+                  {units.filter((item) => item.propertyId === visitorForm.propertyId).map((unit) => <option key={unit.id} value={unit.id}>{unit.label}</option>)}
+                </select></label>
                 <label>Floor<input value={visitorForm.floor} onChange={(event) => setVisitorForm({ ...visitorForm, floor: event.target.value })} placeholder="3" /></label>
                 <label>House number (estate)<input value={visitorForm.houseNumber} onChange={(event) => setVisitorForm({ ...visitorForm, houseNumber: event.target.value })} placeholder="E-17" /></label>
-                <label>Status<select value={visitorForm.status} onChange={(event) => setVisitorForm({ ...visitorForm, status: event.target.value as "active" | "checked-out" })}>
+                <label>Status<select value={visitorForm.status} onChange={(event) => setVisitorForm({ ...visitorForm, status: event.target.value as "pending" | "active" | "checked-out" })}>
+                  <option value="pending">Pending arrival</option>
                   <option value="active">Active</option>
                   <option value="checked-out">Checked out</option>
                 </select></label>
               </div>
-              <button className="primary-action" type="submit">{editingVisitorId ? "Update visitor pass" : "Save visitor pass"}</button>
+              <button className="primary-action" type="submit" disabled={savingVisitor}>{savingVisitor ? "Saving..." : editingVisitorId ? "Update visitor pass" : "Save visitor pass"}</button>
+              {visitorStatus && <p className="status-note" role="status">{visitorStatus}</p>}
             </form>
           </article>
           <article className="panel wide-panel">
@@ -2281,6 +2349,107 @@ function NoticesPage({ role, notifications, properties, onSendNotice }: { role: 
   );
 }
 
+function VisitorApplicationPage({ propertyId, unitId }: { propertyId: string; unitId: string }) {
+  const [option, setOption] = useState<{ propertyId: string; propertyName: string; unitId: string; unitLabel: string } | null>(null);
+  const [form, setForm] = useState({ visitorName: "", phone: "", email: "", reason: "", destination: "" });
+  const [status, setStatus] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetchJson<{ data: Array<{ propertyId: string; propertyName: string; unitId: string; unitLabel: string }> }>(
+      `/api/public/visitor-options/${encodeURIComponent(propertyId)}`
+    ).then((result) => {
+      const selected = result.data.find((item) => item.unitId === unitId);
+      if (!selected) throw new Error("This visitor QR does not match an available unit.");
+      setOption(selected);
+    }).catch((error) => setStatus(error instanceof Error ? error.message : "Could not load visitor application."));
+  }, [propertyId, unitId]);
+
+  async function submit(event: { preventDefault: () => void }) {
+    event.preventDefault();
+    if (!option) return;
+    setSaving(true);
+    setStatus("Submitting application...");
+    try {
+      await fetchJson<{ data: VisitorPassRecord }>("/api/public/visitor-applications", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...form, propertyId: option.propertyId, unitId: option.unitId })
+      });
+      setStatus("Application submitted. Please show your registration email and QR confirmation to security for check-in.");
+      setForm({ visitorName: "", phone: "", email: "", reason: "", destination: "" });
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not submit visitor application.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <main className="auth-screen">
+      <section className="auth-card">
+        <div className="landing-brand"><BrandLogo /><span>RentFlow visitor access</span></div>
+        <h1>Visitor application</h1>
+        <p>{option ? `${option.propertyName} · Unit ${option.unitLabel}` : "Loading property details..."}</p>
+        {option && status.startsWith("Application submitted") ? (
+          <p className="status-note" role="status">{status}</p>
+        ) : (
+          <form onSubmit={submit}>
+            <label>Full name<input required autoComplete="name" value={form.visitorName} onChange={(event) => setForm({ ...form, visitorName: event.target.value })} /></label>
+            <label>Contact number<input required autoComplete="tel" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} /></label>
+            <label>Email<input required type="email" autoComplete="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label>
+            <label>Reason for visit<textarea required value={form.reason} onChange={(event) => setForm({ ...form, reason: event.target.value })} /></label>
+            <label>Destination<input required value={form.destination} onChange={(event) => setForm({ ...form, destination: event.target.value })} placeholder={`Unit ${option?.unitLabel ?? ""}`} /></label>
+            {status && <p className="status-note" role="status">{status}</p>}
+            <button className="primary-cta" type="submit" disabled={!option || saving}>{saving ? "Submitting..." : "Submit visitor application"}</button>
+          </form>
+        )}
+        <a className="small-copy" href="/">Return to RentFlow</a>
+      </section>
+    </main>
+  );
+}
+
+function VisitorsPage({ records, onCheckIn, onCheckOut }: {
+  records: VisitorPassRecord[];
+  onCheckIn: (id: string) => Promise<VisitorPassRecord | null>;
+  onCheckOut: (id: string) => Promise<VisitorPassRecord | null>;
+}) {
+  const [busyId, setBusyId] = useState("");
+  const [status, setStatus] = useState("");
+
+  async function updateVisit(record: VisitorPassRecord) {
+    setBusyId(record.id);
+    setStatus("");
+    try {
+      const updated = record.status === "pending" ? await onCheckIn(record.id) : await onCheckOut(record.id);
+      if (!updated) throw new Error("Visitor record was not updated.");
+      setStatus(record.status === "pending" ? "Visitor checked in." : "Visitor checked out.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not update visitor status.");
+    } finally {
+      setBusyId("");
+    }
+  }
+
+  return (
+    <section className="content-grid">
+      <article className="panel wide-panel">
+        <div className="panel-heading"><div><span>Gate register</span><h3>Visitors</h3></div><Users /></div>
+        {status && <p className="status-note" role="status">{status}</p>}
+        {records.length === 0 ? <p className="muted-copy">No visitor applications have been submitted.</p> : records.map((record) => (
+          <div className="property-row" key={record.id}>
+            <span><strong>{record.visitorName}</strong><small>{record.email} · {record.phone}</small></span>
+            <span><strong>{record.propertyName} · {record.unitLabel ?? record.houseNumber ?? "Unit"}</strong><small>{record.destination}</small></span>
+            <span><strong>{record.status === "pending" ? "Awaiting arrival" : record.status === "active" ? "On property" : "Departed"}</strong><small>In: {record.checkIn ? formatDateTime(record.checkIn) : "Not checked in"}</small><small>Out: {record.checkOut ? formatDateTime(record.checkOut) : "Not checked out"}</small></span>
+            {record.status !== "checked-out" && <button type="button" disabled={busyId === record.id} onClick={() => updateVisit(record)}>{busyId === record.id ? "Saving..." : record.status === "pending" ? "Check in" : "Check out"}</button>}
+          </div>
+        ))}
+      </article>
+    </section>
+  );
+}
+
 function SecurityPage({ role, securityRecords, onAddSecurityRecord }: { role: Role; securityRecords: ServerSecurityRecord[]; onAddSecurityRecord: (payload: { propertyName: string; companyName: string; contactName: string; contactPhone: string; contactEmail: string; notes: string; instructions: string; location?: string }) => Promise<ServerSecurityRecord | null> }) {
   const [form, setForm] = useState({ propertyName: "", companyName: "", contactName: "", contactPhone: "", contactEmail: "", location: "", notes: "", instructions: "" });
   const [status, setStatus] = useState("");
@@ -2630,6 +2799,8 @@ function TabContent({
   visitorRecords,
   onSaveVisitorRecord,
   onUpdateVisitorRecord,
+  onCheckInVisitor,
+  onCheckOutVisitor,
   accessToken
 }: {
   role: Role;
@@ -2664,16 +2835,19 @@ function TabContent({
   onSignOut: () => void;
   onSendNotice: (payload: { template: string; channels?: string[]; payload?: Record<string, unknown>; propertyId?: string }) => Promise<boolean>;
   visitorRecords: VisitorPassRecord[];
-  onSaveVisitorRecord: (payload: Omit<VisitorPassRecord, "id" | "createdAt">) => VisitorPassRecord;
-  onUpdateVisitorRecord: (id: string, payload: Partial<VisitorPassRecord>) => void;
+  onSaveVisitorRecord: (payload: Omit<VisitorPassRecord, "id" | "createdAt">) => Promise<VisitorPassRecord | null>;
+  onUpdateVisitorRecord: (id: string, payload: Partial<VisitorPassRecord>) => Promise<VisitorPassRecord | null>;
+  onCheckInVisitor: (id: string) => Promise<VisitorPassRecord | null>;
+  onCheckOutVisitor: (id: string) => Promise<VisitorPassRecord | null>;
   accessToken: string | null;
 }) {
-  if (activeTab === "Overview") return <OverviewPage role={role} onNavigate={onNavigate} currency={currency} onSendPushAlert={onSendPushAlert} properties={properties} visitorRecords={visitorRecords} onSaveVisitorRecord={onSaveVisitorRecord} onUpdateVisitorRecord={onUpdateVisitorRecord} />;
+  if (activeTab === "Overview") return <OverviewPage role={role} onNavigate={onNavigate} currency={currency} onSendPushAlert={onSendPushAlert} properties={properties} units={units} visitorRecords={visitorRecords} onSaveVisitorRecord={onSaveVisitorRecord} onUpdateVisitorRecord={onUpdateVisitorRecord} />;
   if (activeTab === "Properties") return <PropertiesPage role={role} currency={currency} properties={properties} units={units} tenants={tenants} expenses={expenses} onCreateListing={onCreateListing} onCreateUnit={onCreateUnit} onCreateTenant={onCreateTenant} onUpdateUnit={onUpdateUnit} onRecordExpense={onRecordExpense} onUploadAgreementTemplate={onUploadAgreementTemplate} onGenerateLeaseDocuments={onGenerateLeaseDocuments} />;
   if (activeTab === "Payments") return <PaymentsPage role={role} currency={currency} payments={payments} onMakePayment={onMakePayment} onApprovePayment={onApprovePayment} />;
   if (activeTab === "Maintenance") return <MaintenancePage role={role} maintenanceData={maintenanceData} onSubmitMaintenance={onSubmitMaintenance} onUpdateMaintenance={onUpdateMaintenance} />;
   if (activeTab === "Messaging") return <section className="messaging-grid"><MessagingCenter role={role} threads={threads} messages={messages} notifications={notifications} onLoadThread={onLoadThread} onSendMessage={onSendMessage} onSendPushAlert={onSendPushAlert} /><NoticesPage role={role} notifications={notifications} properties={properties} onSendNotice={onSendNotice} /></section>;
   if (activeTab === "Notices") return <NoticesPage role={role} notifications={notifications} properties={properties} onSendNotice={onSendNotice} />;
+  if (activeTab === "Visitors") return <VisitorsPage records={visitorRecords} onCheckIn={onCheckInVisitor} onCheckOut={onCheckOutVisitor} />;
   if (activeTab === "Reports") return <ReportsPage role={role} currency={currency} />;
   if (activeTab === "Security") return <SecurityPage role={role} securityRecords={securityRecords} onAddSecurityRecord={onAddSecurityRecord} />;
   if (activeTab === "Profile") return <ProfilePage role={role} />;
@@ -2908,7 +3082,7 @@ function AuthPage({ mode, onMode, onLogin, onSignup, onLegal, error, loading }: 
         </p>
         {status && <p className="status-note error">{status}</p>}
         {error && <p className="status-note error">{error}</p>}
-        <button className="primary-cta" onClick={submit} disabled={loading}>
+        <button className="primary-cta" type="button" onClick={submit} disabled={loading}>
           {loading ? "Processing..." : mode === "login" ? "Open dashboard" : "Create account"}
         </button>
       </section>
@@ -2964,7 +3138,7 @@ function AppShell() {
         }
         if (payload.type === "notification.sent") {
           const items = payload.notifications as ServerNotification[];
-          setNotifications((current) => [...items, ...current]);
+          setNotifications((current) => mergeNotifications(current, items));
         }
         if (payload.type === "maintenance.ticket.created") {
           const ticket = payload.ticket as ServerMaintenanceTicket;
@@ -2985,24 +3159,20 @@ function AppShell() {
   }, [accessToken]);
 
   useEffect(() => {
-    const storedVisitorRecords = window.localStorage.getItem("rentflow-visitor-records");
-    if (storedVisitorRecords) {
-      try {
-        setVisitorRecords(JSON.parse(storedVisitorRecords));
-      } catch {
-        setVisitorRecords([]);
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    window.localStorage.setItem("rentflow-visitor-records", JSON.stringify(visitorRecords));
-  }, [visitorRecords]);
-
-  useEffect(() => {
     if (!accessToken) return;
     fetchAppData(accessToken);
   }, [accessToken]);
+
+  useEffect(() => {
+    if (!accessToken || role === "Tenant") return;
+    const refreshVisitors = () => {
+      fetchJson<{ data: VisitorPassRecord[] }>("/api/visitors", { headers: getAuthHeaders(accessToken) })
+        .then((result) => setVisitorRecords(result.data))
+        .catch((error) => console.error("Failed to refresh visitor records:", error));
+    };
+    const interval = window.setInterval(refreshVisitors, 10_000);
+    return () => window.clearInterval(interval);
+  }, [accessToken, role]);
 
   async function fetchAppData(token: string) {
     try {
@@ -3357,84 +3527,63 @@ function AppShell() {
     }
   }
 
-  function saveVisitorRecord(payload: Omit<VisitorPassRecord, "id" | "createdAt">) {
-    if (!accessToken) {
-      // Fallback to local state if no token
-      const record: VisitorPassRecord = {
-        ...payload,
-        id: `visitor_${Date.now()}`,
-        createdAt: new Date().toISOString()
-      };
-      setVisitorRecords((current) => [record, ...current]);
-      return record;
-    }
-    
-    // Make API call to save visitor record
-    fetchJson<{ data: VisitorPassRecord }>("/api/visitors", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...getAuthHeaders(accessToken) },
-      body: JSON.stringify(payload)
-    })
-      .then((result) => {
-        setVisitorRecords((current) => [result.data, ...current]);
-      })
-      .catch((error) => {
-        console.error("Failed to save visitor record:", error);
-        // Fallback: save to local state
-        const record: VisitorPassRecord = {
-          ...payload,
-          id: `visitor_${Date.now()}`,
-          createdAt: new Date().toISOString()
-        };
-        setVisitorRecords((current) => [record, ...current]);
+  async function saveVisitorRecord(payload: Omit<VisitorPassRecord, "id" | "createdAt">) {
+    if (!accessToken) return null;
+    try {
+      const result = await fetchJson<{ data: VisitorPassRecord }>("/api/visitors", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders(accessToken) },
+        body: JSON.stringify(payload)
       });
-
-    // Return optimistic record for immediate UI feedback
-    const record: VisitorPassRecord = {
-      ...payload,
-      id: `visitor_${Date.now()}`,
-      createdAt: new Date().toISOString()
-    };
-    return record;
+      setVisitorRecords((current) => [result.data, ...current.filter((record) => record.id !== result.data.id)]);
+      return result.data;
+    } catch (error) {
+      console.error("Failed to save visitor record:", error);
+      throw error;
+    }
   }
 
-  function updateVisitorRecord(id: string, payload: Partial<VisitorPassRecord>) {
-    if (!accessToken) {
-      // Fallback to local state
-      setVisitorRecords((current) => current.map((record) => record.id === id ? { ...record, ...payload } : record));
-      return;
-    }
-
-    // Make API call to update visitor record
-    fetchJson<{ data: VisitorPassRecord }>(`/api/visitors/${id}`, {
+  async function updateVisitorRecord(id: string, payload: Partial<VisitorPassRecord>) {
+    if (!accessToken) return null;
+    const result = await fetchJson<{ data: VisitorPassRecord }>(`/api/visitors/${id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json", ...getAuthHeaders(accessToken) },
       body: JSON.stringify(payload)
-    })
-      .then((result) => {
-        setVisitorRecords((current) => current.map((record) => record.id === id ? result.data : record));
-      })
-      .catch((error) => {
-        console.error("Failed to update visitor record:", error);
-        // Fallback: update local state
-        setVisitorRecords((current) => current.map((record) => record.id === id ? { ...record, ...payload } : record));
-      });
+    });
+    setVisitorRecords((current) => current.map((record) => record.id === id ? result.data : record));
+    return result.data;
+  }
 
-    // Optimistic update
-    setVisitorRecords((current) => current.map((record) => record.id === id ? { ...record, ...payload } : record));
+  async function checkInVisitor(id: string) {
+    if (!accessToken) return null;
+    const result = await fetchJson<{ data: VisitorPassRecord }>(`/api/visitors/${id}/check-in`, {
+      method: "POST",
+      headers: getAuthHeaders(accessToken)
+    });
+    setVisitorRecords((current) => current.map((record) => record.id === id ? result.data : record));
+    return result.data;
+  }
+
+  async function checkOutVisitor(id: string) {
+    if (!accessToken) return null;
+    const result = await fetchJson<{ data: VisitorPassRecord }>(`/api/visitors/${id}/check-out`, {
+      method: "POST",
+      headers: getAuthHeaders(accessToken)
+    });
+    setVisitorRecords((current) => current.map((record) => record.id === id ? result.data : record));
+    return result.data;
   }
 
   async function sendNotice(payload: { template: string; channels?: string[]; payload?: Record<string, unknown>; propertyId?: string }) {
     if (!accessToken) return false;
     try {
       const body = { template: payload.template, channels: payload.channels, payload: payload.payload, propertyId: payload.propertyId };
-      const result = await fetchJson<{ data: unknown }>("/api/notifications", {
+      const result = await fetchJson<{ data: ServerNotification[] }>("/api/notifications", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...getAuthHeaders(accessToken) },
         body: JSON.stringify(body)
       });
-      // optimistic: push a lightweight notice into state for immediate visibility
-      setNotifications((current) => [{ id: `local_${Date.now()}`, userId: current[0]?.userId, propertyId: payload.propertyId, channel: (payload.channels?.[0] ?? "push"), template: payload.template, payload: payload.payload ?? {}, createdAt: new Date().toISOString() }, ...current]);
+      setNotifications((current) => mergeNotifications(current, result.data));
       return true;
     } catch (error) {
       console.error(error);
@@ -3597,6 +3746,8 @@ function AppShell() {
           visitorRecords={visitorRecords}
           onSaveVisitorRecord={saveVisitorRecord}
           onUpdateVisitorRecord={updateVisitorRecord}
+          onCheckInVisitor={checkInVisitor}
+          onCheckOutVisitor={checkOutVisitor}
           accessToken={accessToken}
         />
       </section>
@@ -3623,5 +3774,9 @@ function AppShell() {
 }
 
 export function App() {
+  const visitorParams = new URLSearchParams(window.location.search);
+  if (visitorParams.get("visitor") === "apply") {
+    return <VisitorApplicationPage propertyId={visitorParams.get("propertyId") ?? ""} unitId={visitorParams.get("unitId") ?? ""} />;
+  }
   return <AppShell />;
 }
