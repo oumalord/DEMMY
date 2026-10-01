@@ -1213,35 +1213,37 @@ app.get("/api/ai/insights", authenticate, async (_req, res) => {
 app.get("/api/admin/users", authenticate, requireRoles("super_admin"), (_req, res) => res.json({ data: users }));
 app.get("/api/admin/audit-logs", authenticate, requireRoles("owner", "super_admin"), (_req, res) => res.json({ data: auditLogs }));
 
-const server = app.listen(port, async () => {
-  console.log(`RentFlow API listening on http://localhost:${port}`);
-  
-  // Check database connection
-  const health = await databaseHealth();
-  if (health.connected) {
-    console.log(`✓ Connected to database: ${health.database}`);
-  } else {
-    console.error(`✗ Database connection failed: ${health.error}`);
-    console.error("   Make sure:");
-    console.error("   1. DATABASE_URL is set in backend/.env");
-    console.error("   2. Neon database schema.sql and seed.sql have been run");
-    console.error("   3. Neon database is active and accessible");
-  }
-});
+export default app;
 
-wss = new WebSocketServer({ server, path: "/realtime" });
-wss.on("connection", (socket) => {
-  socket.send(JSON.stringify({ type: "connected", channel: "rentflow-realtime" }));
-  socket.on("message", (message) => {
-    try {
-      const payload = JSON.parse(message.toString());
-      if (payload && typeof payload === "object" && ["call.request", "call.answer", "call.hangup"].includes(payload.type)) {
-        broadcastRealtime(payload);
-        return;
-      }
-    } catch {
-      // ignore invalid JSON messages
+if (process.env.VERCEL !== "1") {
+  const server = app.listen(port, async () => {
+    console.log(`RentFlow API listening on http://localhost:${port}`);
+    const health = await databaseHealth();
+    if (health.connected) {
+      console.log(`✓ Connected to database: ${health.database}`);
+    } else {
+      console.error(`✗ Database connection failed: ${health.error}`);
+      console.error("   Make sure:");
+      console.error("   1. DATABASE_URL is set in backend/.env");
+      console.error("   2. Neon database schema.sql and seed.sql have been run");
+      console.error("   3. Neon database is active and accessible");
     }
-    wss?.clients.forEach((client) => client.send(JSON.stringify({ type: "broadcast", payload: message.toString() })));
   });
-});
+
+  wss = new WebSocketServer({ server, path: "/realtime" });
+  wss.on("connection", (socket) => {
+    socket.send(JSON.stringify({ type: "connected", channel: "rentflow-realtime" }));
+    socket.on("message", (message) => {
+      try {
+        const payload = JSON.parse(message.toString());
+        if (payload && typeof payload === "object" && ["call.request", "call.answer", "call.hangup"].includes(payload.type)) {
+          broadcastRealtime(payload);
+          return;
+        }
+      } catch {
+        // ignore invalid JSON messages
+      }
+      wss?.clients.forEach((client) => client.send(JSON.stringify({ type: "broadcast", payload: message.toString() })));
+    });
+  });
+}

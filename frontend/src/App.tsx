@@ -240,13 +240,10 @@ function getAuthHeaders(token: string | null): Record<string, string> | undefine
 }
 
 async function fetchJson<T>(path: string, options: RequestInit = {}) {
-  if (!apiBaseUrl) {
-    throw new Error("The production API is not configured. Set VITE_API_URL in the Vercel project environment variables and redeploy.");
-  }
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), 20_000);
   try {
-    const response = await fetch(`${apiBaseUrl}${path}`, { ...options, signal: options.signal ?? controller.signal });
+    const response = await fetch(apiBaseUrl ? `${apiBaseUrl}${path}` : path, { ...options, signal: options.signal ?? controller.signal });
     if (!response.ok) {
       const text = await response.text();
       let message = text || response.statusText;
@@ -3125,7 +3122,11 @@ function AppShell() {
 
   useEffect(() => {
     if (!accessToken) return;
-    const ws = new WebSocket(`${apiBaseUrl.replace(/^http/, "ws")}/realtime`);
+    if (!apiBaseUrl && !import.meta.env.DEV) return;
+    const realtimeUrl = apiBaseUrl
+      ? `${apiBaseUrl.replace(/^http/, "ws")}/realtime`
+      : `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}/realtime`;
+    const ws = new WebSocket(realtimeUrl);
     wsRef.current = ws;
     ws.onopen = () => setWsConnected(true);
     ws.onclose = () => setWsConnected(false);
