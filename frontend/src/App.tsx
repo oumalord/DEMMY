@@ -3445,9 +3445,14 @@ function AppShell() {
       setMaintenanceData(maintenanceRes.data);
       setPaymentsData(paymentsRes.data);
 
+      const allThreadItems = threadsRes.data as ServerThread[];
+      const assignedPropertyId = unitsRes.data.find((unit) => unit.tenantId === currentUser?.id)?.propertyId;
       const threadItems = role === "Tenant"
-        ? (threadsRes.data as ServerThread[]).filter((t) => !/owner|management/i.test(t.name) && (t.scope ?? "") !== "Private channel")
-        : (threadsRes.data as ServerThread[]);
+        ? allThreadItems
+          .filter((thread) => !/owner|management/i.test(thread.name) && (thread.scope ?? "") !== "Private channel")
+          .filter((thread) => !assignedPropertyId || !thread.propertyId || thread.propertyId === assignedPropertyId)
+          .slice(0, 1)
+        : allThreadItems;
 
       setThreads(threadItems);
       setNotifications(notificationsRes.data);

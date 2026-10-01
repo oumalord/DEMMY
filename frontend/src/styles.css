@@ -2125,6 +2125,47 @@ svg {
     grid-column: auto;
   }
 
+  .messaging-grid {
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
+  }
+
+  .messaging-grid > .notices-panel {
+    display: none;
+  }
+
+  .messaging-panel {
+    width: 100%;
+    min-height: calc(100svh - 120px);
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 10px;
+    padding: 10px;
+    border-radius: 18px;
+  }
+
+  .messaging-panel .chat-sidebar {
+    max-height: 92px;
+    overflow: hidden;
+    padding: 10px;
+  }
+
+  .messaging-panel .chat-title {
+    min-height: 54px;
+  }
+
+  .messaging-panel .thread-list {
+    display: none;
+  }
+
+  .messaging-panel .chat-window {
+    min-height: calc(100svh - 240px);
+  }
+
+  .messaging-panel .chat-context {
+    display: none;
+  }
+
   .landing-screen,
   .auth-screen {
     min-height: 100svh;
