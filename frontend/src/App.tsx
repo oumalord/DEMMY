@@ -223,6 +223,19 @@ interface ServerSecurityRecord {
   createdAt: string;
 }
 
+interface ServerSecurityEvent {
+  id: string;
+  propertyId?: string;
+  eventType: string;
+  title: string;
+  details: string;
+  location?: string;
+  latitude?: number;
+  longitude?: number;
+  status: string;
+  createdAt: string;
+}
+
 interface VisitorPassRecord {
   id: string;
   unitId?: string;
@@ -712,13 +725,18 @@ function MessagingCenter({ role, threads, messages, notifications, onLoadThread,
     setAttachmentUrls((current) => current.filter((item) => item !== url));
   }
 
-  function sendMessage() {
+  async function sendMessage() {
     const body = draft.trim();
     if (!body && attachmentUrls.length === 0) {
       setNoticeStatus("Type a message or attach a file before sending.");
       return;
     }
-    onSendMessage(activeThread.id, body || "", attachmentUrls);
+    if (!activeThread.id) {
+      setNoticeStatus("Choose a group before sending a message.");
+      return;
+    }
+    await onSendMessage(activeThread.id, body || "", attachmentUrls);
+    onLoadThread(activeThread.id);
     setDraft("");
     setAttachmentUrls([]);
     setNoticeStatus(`Message sent to ${activeThread.name}. Push, email, and in-app notifications queued.`);
@@ -728,26 +746,12 @@ function MessagingCenter({ role, threads, messages, notifications, onLoadThread,
     <article className="panel messaging-panel">
       <div className="chat-sidebar">
         <div className="chat-title">
-          <div>
-            <span>{role === "Tenant" ? "Tenant support" : "Managed communication"}</span>
-            <h3>RentFlow Groups</h3>
-          </div>
+          <div><span>{role === "Tenant" ? "Tenant support" : "Managed communication"}</span><h3>RentFlow Groups</h3></div>
           <button aria-label="Search chats"><Search /></button>
         </div>
         {role !== "Tenant" && (
           <div className="chat-filter">
-            <label className="listing-filter-label">
-              Listing
-              <select value={selectedPropertyId} onChange={(event) => setSelectedPropertyId(event.target.value)}>
-                <option value="">All listings</option>
-                {threads
-                  .map((thread) => thread.propertyId)
-                  .filter((propertyId, index, values) => propertyId && values.indexOf(propertyId) === index)
-                  .map((propertyId) => (
-                    <option key={propertyId} value={propertyId}>{propertyId}</option>
-                  ))}
-              </select>
-            </label>
+            <label className="listing-filter-label">Listing<select value={selectedPropertyId} onChange={(event) => setSelectedPropertyId(event.target.value)}><option value="">All listings</option>{threads.map((thread) => thread.propertyId).filter((propertyId, index, values) => propertyId && values.indexOf(propertyId) === index).map((propertyId) => <option key={propertyId} value={propertyId}>{propertyId}</option>)}</select></label>
             <button className={threadFilter === "all" ? "selected" : ""} onClick={() => setThreadFilter("all")}>All</button>
             <button className={threadFilter === "tenant" ? "selected" : ""} onClick={() => setThreadFilter("tenant")}>Tenant</button>
             <button className={threadFilter === "owner" ? "selected" : ""} onClick={() => setThreadFilter("owner")}>Owner</button>
@@ -757,11 +761,7 @@ function MessagingCenter({ role, threads, messages, notifications, onLoadThread,
           {filteredThreads.map((thread) => (
             <button key={thread.id} className={thread.id === activeThreadId ? "thread active-thread" : "thread"} onClick={() => selectThread(thread.id)}>
               <div className="avatar-stack">{thread.name.slice(0, 2).toUpperCase()}</div>
-              <span>
-                <strong>{thread.name}</strong>
-                <small>{thread.type.replace("_", " ")} • {thread.memberIds.length} members</small>
-                <em>{thread.lastMessage?.body ?? "No recent updates"}</em>
-              </span>
+              <span><strong>{thread.name}</strong><small>{thread.type.replace("_", " ")} • {thread.memberIds.length} members</small><em>{thread.lastMessage?.body ?? "No recent updates"}</em></span>
               {thread.unreadCount ? <b>{thread.unreadCount}</b> : null}
             </button>
           ))}
@@ -815,66 +815,6 @@ function MessagingCenter({ role, threads, messages, notifications, onLoadThread,
         )}
       </div>
 
-      <aside className="chat-context">
-        <span>Channel controls</span>
-        <h3>{role === "Tenant" ? "Your access" : "Management tools"}</h3>
-        {role === "Tenant" ? (
-          <>
-            <div><CheckCircle2 /> Read announcements</div>
-            <div><MessageSquare /> Reply in assigned property groups</div>
-            <div><ShieldCheck /> Private complaints stay restricted</div>
-            <div><FileText /> Message history is available</div>
-          </>
-        ) : (
-          <>
-            <div><CheckCircle2 /> Tenant replies enabled</div>
-            <div><ShieldCheck /> Moderated announcements</div>
-            <div><Bell /> SMS fallback for urgent alerts</div>
-            <div><FileText /> Chat history stored in audit logs</div>
-            <div className="push-alert-form">
-              <input
-                type="text"
-                value={pushAlertMessage}
-                onChange={(e) => setPushAlertMessage(e.target.value)}
-                placeholder="Alert message..."
-                className="push-alert-input"
-              />
-              <button
-                className="secondary-action"
-                onClick={async () => {
-                  if (!pushAlertMessage.trim()) {
-                    setNoticeStatus("Enter an alert message first.");
-                    return;
-                  }
-                  setPushAlertLoading(true);
-                  try {
-                    await onSendPushAlert(pushAlertMessage, selectedPropertyId || undefined);
-                    setNoticeStatus(`✓ Push alert sent to ${selectedPropertyId ? "the selected listing" : "all active listings"}: "${pushAlertMessage}"`);
-                    setPushAlertMessage("");
-                  } catch (error) {
-                    setNoticeStatus("Failed to send alert. Try again.");
-                  } finally {
-                    setPushAlertLoading(false);
-                  }
-                }}
-                disabled={pushAlertLoading}
-              >
-                {pushAlertLoading ? "Sending..." : "Alert"}
-              </button>
-            </div>
-          </>
-        )}
-        <div className="notification-summary"><Bell /> {noticeStatus}</div>
-        <div className="notification-feed">
-          <span>Recent alerts</span>
-          {notifications.slice(0, 3).map((notice) => (
-            <div key={notice.id} className="compact-notice">
-              <strong>{notice.channel}</strong>
-              <small>{notice.template}</small>
-            </div>
-          ))}
-        </div>
-      </aside>
     </article>
   );
 }
@@ -2669,8 +2609,9 @@ function VisitorsPage({ records, onCheckIn, onCheckOut }: {
   );
 }
 
-function SecurityPage({ role, securityRecords, onAddSecurityRecord }: { role: Role; securityRecords: ServerSecurityRecord[]; onAddSecurityRecord: (payload: { propertyName: string; companyName: string; contactName: string; contactPhone: string; contactEmail: string; notes: string; instructions: string; location?: string }) => Promise<ServerSecurityRecord | null> }) {
+function SecurityPage({ role, securityRecords, securityEvents, properties, onAddSecurityRecord, onCreateSecurityEvent }: { role: Role; securityRecords: ServerSecurityRecord[]; securityEvents: ServerSecurityEvent[]; properties: ServerProperty[]; onAddSecurityRecord: (payload: { propertyName: string; companyName: string; contactName: string; contactPhone: string; contactEmail: string; notes: string; instructions: string; location?: string }) => Promise<ServerSecurityRecord | null>; onCreateSecurityEvent: (payload: { propertyId?: string; eventType: string; title: string; details: string; location?: string; latitude?: number; longitude?: number }) => Promise<ServerSecurityEvent | null> }) {
   const [form, setForm] = useState({ propertyName: "", companyName: "", contactName: "", contactPhone: "", contactEmail: "", location: "", notes: "", instructions: "" });
+  const [eventForm, setEventForm] = useState({ eventType: "incident", propertyId: properties[0]?.id ?? "", title: "", details: "", location: "", latitude: "", longitude: "" });
   const [status, setStatus] = useState("");
   const [chatHistory, setChatHistory] = useState<Array<{ agent: string; author: string; time: string; body: string }>>([]);
   const [selectedAgent, setSelectedAgent] = useState<string>(securityRecords[0]?.contactName ?? "");
@@ -2696,6 +2637,24 @@ function SecurityPage({ role, securityRecords, onAddSecurityRecord }: { role: Ro
     }
   }
 
+  async function saveSecurityEvent() {
+    if (!eventForm.title.trim() || !eventForm.details.trim()) {
+      setStatus("Enter a title and details for the security operation.");
+      return;
+    }
+    const event = await onCreateSecurityEvent({
+      propertyId: eventForm.propertyId || undefined,
+      eventType: eventForm.eventType,
+      title: eventForm.title.trim(),
+      details: eventForm.details.trim(),
+      location: eventForm.location.trim() || undefined,
+      latitude: eventForm.latitude ? Number(eventForm.latitude) : undefined,
+      longitude: eventForm.longitude ? Number(eventForm.longitude) : undefined
+    });
+    setStatus(event ? `${eventForm.eventType} record saved.` : "Could not save security operation.");
+    if (event) setEventForm({ ...eventForm, title: "", details: "", location: "", latitude: "", longitude: "" });
+  }
+
   function sendSecurityMessage() {
     if (!selectedAgent || !message.trim()) {
       setStatus("Select a security agent and type a message first.");
@@ -2716,6 +2675,26 @@ function SecurityPage({ role, securityRecords, onAddSecurityRecord }: { role: Ro
           ))}
         </div>
       </article>
+      {role !== "Tenant" && <article className="panel wide-panel form-panel security-operations-panel">
+        <div className="panel-heading"><div><span>Security operations</span><h3>Log and coordinate property security</h3></div><ShieldCheck /></div>
+        <div className="security-operation-grid">
+          {[
+            ["incident", "Incident"],
+            ["mobile_patrol", "Mobile patrol tracking"],
+            ["gate_communication", "Gate communications"],
+            ["emergency_alert", "Emergency alert"],
+            ["security_audit", "Property security audit"]
+          ].map(([value, label]) => <button key={value} type="button" className={eventForm.eventType === value ? "selected" : ""} onClick={() => setEventForm({ ...eventForm, eventType: value })}>{label}</button>)}
+        </div>
+        <label>Property<select value={eventForm.propertyId} onChange={(event) => setEventForm({ ...eventForm, propertyId: event.target.value })}><option value="">All properties</option>{properties.map((property) => <option key={property.id} value={property.id}>{property.name}</option>)}</select></label>
+        <label>Title<input autoComplete="off" value={eventForm.title} onChange={(event) => setEventForm({ ...eventForm, title: event.target.value })} placeholder="Operation title" /></label>
+        <label>Details<textarea value={eventForm.details} onChange={(event) => setEventForm({ ...eventForm, details: event.target.value })} placeholder="Describe the incident, patrol, communication, alert, or audit finding." /></label>
+        <label>Location or gate point<input autoComplete="off" value={eventForm.location} onChange={(event) => setEventForm({ ...eventForm, location: event.target.value })} placeholder="Main gate" /></label>
+        {eventForm.eventType === "mobile_patrol" && <div className="security-coordinate-grid"><label>Latitude<input autoComplete="off" value={eventForm.latitude} onChange={(event) => setEventForm({ ...eventForm, latitude: event.target.value })} /></label><label>Longitude<input autoComplete="off" value={eventForm.longitude} onChange={(event) => setEventForm({ ...eventForm, longitude: event.target.value })} /></label></div>}
+        <button className="primary-action" type="button" onClick={saveSecurityEvent}>Save security operation</button>
+        {securityEvents.length > 0 && <div className="security-event-list">{securityEvents.slice(0, 8).map((event) => <div className="security-event-row" key={event.id}><strong>{event.title}</strong><span>{event.eventType.replace(/_/g, " ")} · {formatDateTime(event.createdAt)}</span><p>{event.details}</p></div>)}</div>}
+        {status && <p className="status-note">{status}</p>}
+      </article>}
       {role === "Tenant" ? (
         <article className="panel form-panel">
           <div className="panel-heading"><div><span>Contact security</span><h3>Message gate staff</h3></div></div>
@@ -3022,6 +3001,8 @@ function TabContent({
   onCheckInVisitor,
   onCheckOutVisitor,
   onCreateLease,
+  securityEvents,
+  onCreateSecurityEvent,
   leaseRecords,
   accessToken
 }: {
@@ -3063,6 +3044,8 @@ function TabContent({
   onCheckInVisitor: (id: string) => Promise<VisitorPassRecord | null>;
   onCheckOutVisitor: (id: string) => Promise<VisitorPassRecord | null>;
   onCreateLease: (payload: { unitId: string; tenantId: string; startDate: string; endDate: string }) => Promise<ServerLeaseRecord>;
+  securityEvents: ServerSecurityEvent[];
+  onCreateSecurityEvent: (payload: { propertyId?: string; eventType: string; title: string; details: string; location?: string; latitude?: number; longitude?: number }) => Promise<ServerSecurityEvent | null>;
   leaseRecords: ServerLeaseRecord[];
   accessToken: string | null;
 }) {
@@ -3080,7 +3063,7 @@ function TabContent({
     ? <TenantLeasePage leases={leaseRecords.filter((lease) => lease.tenantId === currentUser?.id)} />
     : <ManagementLeasePage properties={properties} units={units} tenants={tenants} leases={leaseRecords} onUploadTemplate={onUploadAgreementTemplate} onGenerateLeases={onGenerateLeaseDocuments} onCreateLease={onCreateLease} />;
   if (activeTab === "Reports") return <ReportsPage role={role} currency={currency} />;
-  if (activeTab === "Security") return <SecurityPage role={role} securityRecords={securityRecords} onAddSecurityRecord={onAddSecurityRecord} />;
+  if (activeTab === "Security") return <SecurityPage role={role} securityRecords={securityRecords} securityEvents={securityEvents} properties={properties} onAddSecurityRecord={onAddSecurityRecord} onCreateSecurityEvent={onCreateSecurityEvent} />;
   if (activeTab === "Profile") return <ProfilePage role={role} />;
   if (activeTab === "Sign Out") return <SignOutPage onSignOut={onSignOut} />;
   return <AdminPage role={role} properties={properties} accessToken={accessToken} />;
@@ -3340,6 +3323,7 @@ function AppShell() {
   const [securityRecords, setSecurityRecords] = useState<ServerSecurityRecord[]>([]);
   const [visitorRecords, setVisitorRecords] = useState<VisitorPassRecord[]>([]);
   const [leaseRecords, setLeaseRecords] = useState<ServerLeaseRecord[]>([]);
+  const [securityEvents, setSecurityEvents] = useState<ServerSecurityEvent[]>([]);
   const [securityChatMessages, setSecurityChatMessages] = useState<Array<{ id: string; agent: string; author: string; time: string; body: string }>>([]);
   const [wsConnected, setWsConnected] = useState(false);
   const [authError, setAuthError] = useState("");
@@ -3385,6 +3369,16 @@ function AppShell() {
       wsRef.current = null;
     };
   }, [accessToken]);
+
+  useEffect(() => {
+    if (!accessToken || role === "Tenant") {
+      setSecurityEvents([]);
+      return;
+    }
+    fetchJson<{ data: ServerSecurityEvent[] }>("/api/security/events", { headers: getAuthHeaders(accessToken) })
+      .then((result) => setSecurityEvents(result.data))
+      .catch((error) => console.error("Failed to load security events:", error));
+  }, [accessToken, role]);
 
   useEffect(() => {
     if (!accessToken) return;
@@ -3687,6 +3681,17 @@ function AppShell() {
     return result.data;
   }
 
+  async function createSecurityEvent(payload: { propertyId?: string; eventType: string; title: string; details: string; location?: string; latitude?: number; longitude?: number }) {
+    if (!accessToken) return null;
+    const result = await fetchJson<{ data: ServerSecurityEvent }>("/api/security/events", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...getAuthHeaders(accessToken) },
+      body: JSON.stringify(payload)
+    });
+    setSecurityEvents((current) => [result.data, ...current]);
+    return result.data;
+  }
+
   async function approvePayment(payload: { paymentId: string; status?: string }) {
     if (!accessToken) return null;
     try {
@@ -3852,6 +3857,7 @@ function AppShell() {
     setSecurityRecords([]);
     setMaintenanceData([]);
     setLeaseRecords([]);
+    setSecurityEvents([]);
   }
 
   function switchRole(nextRole: Role) {
@@ -4000,6 +4006,8 @@ function AppShell() {
           onCheckInVisitor={checkInVisitor}
           onCheckOutVisitor={checkOutVisitor}
           onCreateLease={createLease}
+          securityEvents={securityEvents}
+          onCreateSecurityEvent={createSecurityEvent}
           leaseRecords={leaseRecords}
           accessToken={accessToken}
         />

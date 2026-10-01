@@ -1036,6 +1036,41 @@ export async function listSecurityRecords() {
   return result.rows;
 }
 
+export async function listSecurityEvents(user: User) {
+  const organization = await query<{ organization_id: string }>("select organization_id from users where id = $1", [user.id]);
+  const organizationId = organization.rows[0]?.organization_id;
+  if (!organizationId) throw new Error("User organization not found.");
+  const result = await query(
+    `select id, property_id as "propertyId", event_type as "eventType", title, details, location,
+            latitude, longitude, status, created_by as "createdBy", created_at as "createdAt"
+     from security_events where organization_id = $1 order by created_at desc limit 200`,
+    [organizationId]
+  );
+  return result.rows;
+}
+
+export async function createSecurityEvent(user: User, input: {
+  propertyId?: string;
+  eventType: string;
+  title: string;
+  details: string;
+  location?: string;
+  latitude?: number;
+  longitude?: number;
+}) {
+  const organization = await query<{ organization_id: string }>("select organization_id from users where id = $1", [user.id]);
+  const organizationId = organization.rows[0]?.organization_id;
+  if (!organizationId) throw new Error("User organization not found.");
+  const result = await query(
+    `insert into security_events (organization_id, property_id, event_type, title, details, location, latitude, longitude, created_by)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+     returning id, property_id as "propertyId", event_type as "eventType", title, details, location,
+               latitude, longitude, status, created_by as "createdBy", created_at as "createdAt"`,
+    [organizationId, input.propertyId ?? null, input.eventType, input.title, input.details, input.location ?? null, input.latitude ?? null, input.longitude ?? null, user.id]
+  );
+  return result.rows[0];
+}
+
 export async function createSecurityRecord(user: User, input: {
   propertyName: string;
   companyName?: string;

@@ -56,6 +56,8 @@ import {
   listPayments,
   listPaymentAccounts,
   listSecurityRecords,
+  listSecurityEvents,
+  createSecurityEvent,
   createSecurityRecord,
   listProperties,
   listThreadMessages,
@@ -532,6 +534,36 @@ app.get("/api/security", authenticate, async (req, res) => {
     res.json({ data });
   } catch (error) {
     res.json({ data: [], error: error instanceof Error ? error.message : "Failed to load security records" });
+  }
+});
+
+app.get("/api/security/events", authenticate, requireRoles("caretaker", "owner", "super_admin"), async (req, res) => {
+  try {
+    res.json({ data: await listSecurityEvents(req.user!), storage: "postgres" });
+  } catch (error) {
+    res.status(503).json({ error: error instanceof Error ? error.message : "Could not load security events." });
+  }
+});
+
+app.post("/api/security/events", authenticate, requireRoles("caretaker", "owner", "super_admin"), async (req, res) => {
+  const eventType = String(req.body.eventType ?? "").trim();
+  const title = String(req.body.title ?? "").trim();
+  const details = String(req.body.details ?? "").trim();
+  if (!eventType || !title || !details) return res.status(400).json({ error: "eventType, title, and details are required." });
+  try {
+    const event = await createSecurityEvent(req.user!, {
+      propertyId: req.body.propertyId ? String(req.body.propertyId) : undefined,
+      eventType,
+      title,
+      details,
+      location: req.body.location ? String(req.body.location) : undefined,
+      latitude: req.body.latitude === "" || req.body.latitude == null ? undefined : Number(req.body.latitude),
+      longitude: req.body.longitude === "" || req.body.longitude == null ? undefined : Number(req.body.longitude)
+    });
+    await createAuditLog(req.user!.id, "CREATE_SECURITY_EVENT", "security_event", String(event.id), { eventType }).catch(() => undefined);
+    res.status(201).json({ data: event, storage: "postgres" });
+  } catch (error) {
+    res.status(503).json({ error: error instanceof Error ? error.message : "Could not save security event." });
   }
 });
 
