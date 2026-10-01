@@ -63,8 +63,7 @@ import {
   YAxis
 } from "recharts";
 
-const configuredApiUrl = import.meta.env.VITE_API_URL?.trim();
-const apiBaseUrl = configuredApiUrl ?? (import.meta.env.DEV ? "http://localhost:4000" : "");
+const apiBaseUrl = import.meta.env.DEV ? "http://localhost:4000" : "";
 
 type UserRole = "tenant" | "caretaker" | "owner" | "super_admin";
 
