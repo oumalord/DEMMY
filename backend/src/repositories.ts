@@ -455,17 +455,75 @@ export async function listAgreementTemplates(user: User) {
 
 export async function listLeases() {
   const result = await query(
-    `select id,
-            unit_id as "unitId",
-            tenant_id as "tenantId",
-            starts_at as "startDate",
-            ends_at as "endDate",
-            deposit_amount::float as deposit,
-            digital_signature_status as "digitalSignatureStatus"
-     from leases
-     order by ends_at asc`
+    `select l.id,
+            l.unit_id as "unitId",
+            l.tenant_id as "tenantId",
+            l.starts_at as "startDate",
+            l.ends_at as "endDate",
+            l.rent_amount::float as "rentAmount",
+            l.deposit_amount::float as deposit,
+            l.digital_signature_status as "digitalSignatureStatus",
+            u.label as "unitLabel",
+            p.id as "propertyId",
+            p.name as "propertyName",
+            p.address as "propertyAddress",
+            t.name as "tenantName",
+            t.email as "tenantEmail",
+            t.phone as "tenantPhone"
+     from leases l
+     join units u on u.id = l.unit_id
+     join properties p on p.id = u.property_id
+     join users t on t.id = l.tenant_id
+     order by l.ends_at asc`
   );
   return result.rows;
+}
+
+export async function listTenantLeaseRecords(tenantId: string) {
+  const result = await query(
+    `select l.id,
+            l.unit_id as "unitId",
+            l.tenant_id as "tenantId",
+            l.starts_at as "startDate",
+            l.ends_at as "endDate",
+            l.rent_amount::float as "rentAmount",
+            l.deposit_amount::float as "depositAmount",
+            l.digital_signature_status as "digitalSignatureStatus",
+            u.label as "unitLabel",
+            p.id as "propertyId",
+            p.name as "propertyName",
+            p.address as "propertyAddress"
+     from leases l
+     join units u on u.id = l.unit_id
+     join properties p on p.id = u.property_id
+     where l.tenant_id = $1
+     order by l.starts_at desc`,
+    [tenantId]
+  );
+  return result.rows;
+}
+
+export async function createLeaseRecord(input: { unitId: string; tenantId: string; startDate: string; endDate: string }) {
+  const unitResult = await query<{ propertyId: string; tenantId: string | null; rentAmount: number; depositAmount: number }>(
+    `select property_id as "propertyId",
+            tenant_id as "tenantId",
+            rent_amount::float as "rentAmount",
+            deposit_amount::float as "depositAmount"
+     from units where id = $1`,
+    [input.unitId]
+  );
+  const unit = unitResult.rows[0];
+  if (!unit) throw new Error("Unit not found.");
+  if (unit.tenantId !== input.tenantId) throw new Error("The selected tenant is not assigned to this unit.");
+
+  const inserted = await query<{ id: string }>(
+    `insert into leases (unit_id, tenant_id, starts_at, ends_at, rent_amount, deposit_amount)
+     values ($1, $2, $3, $4, $5, $6)
+     returning id`,
+    [input.unitId, input.tenantId, input.startDate, input.endDate, unit.rentAmount, unit.depositAmount]
+  );
+  const leases = await listLeases();
+  return leases.find((lease) => String(lease.id) === String(inserted.rows[0]?.id)) ?? null;
 }
 
 export async function listPayments(user: User) {

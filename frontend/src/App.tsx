@@ -154,6 +154,26 @@ interface ServerPayment {
   paidAt: string;
 }
 
+interface ServerLeaseRecord {
+  id: string;
+  unitId: string;
+  tenantId: string;
+  startDate: string;
+  endDate: string;
+  rentAmount?: number;
+  deposit?: number;
+  depositAmount?: number;
+  digitalSignatureStatus: string;
+  unitLabel?: string;
+  propertyId?: string;
+  propertyName?: string;
+  propertyAddress?: string;
+  templateAvailable?: boolean;
+  templateName?: string;
+  renderedText?: string;
+  fileName?: string;
+}
+
 interface ServerTenant {
   id: string;
   name: string;
@@ -304,7 +324,7 @@ function BrandLogo({ className = "brand-mark" }: { className?: string }) {
 }
 
 type Role = "Tenant" | "Management" | "Owner" | "Super Admin";
-type Tab = "Overview" | "Properties" | "Payments" | "Maintenance" | "Messaging" | "Notices" | "Visitors" | "Reports" | "Security" | "Admin" | "Profile" | "Sign Out";
+type Tab = "Overview" | "Properties" | "Payments" | "Maintenance" | "Messaging" | "Notices" | "Visitors" | "Lease" | "Reports" | "Security" | "Admin" | "Profile" | "Sign Out";
 type Currency = "USD" | "KES";
 
 const roles: Role[] = ["Tenant", "Management", "Owner", "Super Admin"];
@@ -317,6 +337,7 @@ const tabIcons: Record<Tab, typeof Home> = {
   Messaging: MessageSquare,
   Notices: Megaphone,
   Visitors: Users,
+  Lease: FileText,
   Reports: FileText,
   Security: ShieldCheck,
   Admin: UserCog,
@@ -332,6 +353,7 @@ const navItems: Array<[typeof Home, Tab]> = [
   [tabIcons.Messaging, "Messaging"],
   [tabIcons.Notices, "Notices"],
   [tabIcons.Visitors, "Visitors"],
+  [tabIcons.Lease, "Lease"],
   [tabIcons.Reports, "Reports"],
   [tabIcons.Security, "Security"],
   [tabIcons.Admin, "Admin"],
@@ -340,10 +362,10 @@ const navItems: Array<[typeof Home, Tab]> = [
 ];
 
 const roleTabs: Record<Role, Tab[]> = {
-  Tenant: ["Overview", "Payments", "Maintenance", "Messaging", "Notices", "Reports", "Security", "Profile", "Sign Out"],
-  Management: ["Overview", "Properties", "Payments", "Maintenance", "Messaging", "Notices", "Visitors", "Reports", "Security", "Profile", "Sign Out"],
-  Owner: ["Overview", "Properties", "Payments", "Maintenance", "Messaging", "Notices", "Visitors", "Reports", "Security", "Admin", "Profile", "Sign Out"],
-  "Super Admin": ["Overview", "Properties", "Payments", "Maintenance", "Messaging", "Notices", "Visitors", "Reports", "Security", "Admin", "Profile", "Sign Out"]
+  Tenant: ["Overview", "Lease", "Payments", "Maintenance", "Messaging", "Notices", "Reports", "Security", "Profile", "Sign Out"],
+  Management: ["Overview", "Properties", "Lease", "Payments", "Maintenance", "Messaging", "Notices", "Visitors", "Reports", "Security", "Profile", "Sign Out"],
+  Owner: ["Overview", "Properties", "Lease", "Payments", "Maintenance", "Messaging", "Notices", "Visitors", "Reports", "Security", "Admin", "Profile", "Sign Out"],
+  "Super Admin": ["Overview", "Properties", "Lease", "Payments", "Maintenance", "Messaging", "Notices", "Visitors", "Reports", "Security", "Admin", "Profile", "Sign Out"]
 };
 
 const rolePrivileges: Record<Role, string[]> = {
@@ -1094,7 +1116,7 @@ function OverviewPage({
         <button role="tab" aria-selected={view === "insights"} className={view === "insights" ? "selected" : ""} onClick={() => setView("insights")}>{isTenant ? "My unit" : "Portfolio"}</button>
       </div>
       {view === "insights" ? (
-        isTenant ? <TenantOverview currency={currency} /> : <PortfolioOverview role={role} />
+        isTenant ? <p className="tenant-empty-state">Your lease and account details are available from the Lease tab.</p> : <PortfolioOverview role={role} />
       ) : (
         <>
           {!isTenant && (
@@ -1200,28 +1222,157 @@ function OverviewPage({
   );
 }
 
-function TenantOverview({ currency }: { currency: Currency }) {
+function TenantLeasePage({ leases }: { leases: ServerLeaseRecord[] }) {
+  const [selectedLeaseId, setSelectedLeaseId] = useState(leases[0]?.id ?? "");
+  const selectedLease = leases.find((lease) => lease.id === selectedLeaseId) ?? leases[0];
+
   return (
-    <>
-      <article className="panel large">
-        <div className="panel-heading">
-          <div><span>My lease</span><h3>Unit A-12 status</h3></div>
-          <button>Download lease</button>
-        </div>
-        <div className="tenant-summary">
-          <div><strong>{formatMoney(2000, currency)}</strong><span>Rent balance</span></div>
-          <div><strong>22 days</strong><span>Next due date</span></div>
-          <div><strong>2</strong><span>Open tickets</span></div>
-          <div><strong>Active</strong><span>Lease agreement</span></div>
+    <section className="content-grid">
+      <article className="panel wide-panel lease-document-panel">
+        <div className="panel-heading"><div><span>My tenancy</span><h3>Lease agreement</h3></div><FileText /></div>
+        {leases.length === 0 ? <p className="muted-copy">No lease record is linked to your account yet. Contact property management to have your tenancy recorded.</p> : (
+          <>
+            {leases.length > 1 && <label>Lease<select value={selectedLease?.id ?? ""} onChange={(event) => setSelectedLeaseId(event.target.value)}>{leases.map((lease) => <option key={lease.id} value={lease.id}>{lease.propertyName} · {lease.unitLabel}</option>)}</select></label>}
+            <div className="lease-details-grid">
+              <div><span>Property</span><strong>{selectedLease?.propertyName}</strong></div>
+              <div><span>Unit</span><strong>{selectedLease?.unitLabel}</strong></div>
+              <div><span>Lease period</span><strong>{selectedLease?.startDate || "Not recorded"} — {selectedLease?.endDate || "Not recorded"}</strong></div>
+              <div><span>Monthly rent</span><strong>{selectedLease?.rentAmount == null ? "Not recorded" : formatMoney(selectedLease.rentAmount, "KES")}</strong></div>
+              <div><span>Deposit</span><strong>{selectedLease?.depositAmount == null ? "Not recorded" : formatMoney(selectedLease.depositAmount, "KES")}</strong></div>
+              <div><span>Signature status</span><strong>{selectedLease?.digitalSignatureStatus}</strong></div>
+            </div>
+            {selectedLease?.templateAvailable && selectedLease.renderedText ? (
+              <>
+                <pre className="lease-document-preview">{selectedLease.renderedText}</pre>
+                <button type="button" className="primary-action" onClick={() => downloadFile(selectedLease.fileName ?? "lease-agreement.txt", selectedLease.renderedText ?? "")}>Download lease</button>
+              </>
+            ) : <p className="muted-copy">Management has not uploaded a lease template for this property yet.</p>}
+          </>
+        )}
+      </article>
+    </section>
+  );
+}
+
+function ManagementLeasePage({ properties, units, tenants, leases, onUploadTemplate, onGenerateLeases, onCreateLease }: {
+  properties: ServerProperty[];
+  units: ServerUnit[];
+  tenants: ServerTenant[];
+  leases: ServerLeaseRecord[];
+  onUploadTemplate: (payload: { propertyId: string; name: string; fileName?: string; templateText: string }) => Promise<unknown>;
+  onGenerateLeases: (payload: { propertyId: string }) => Promise<Array<{ unitId: string; tenantId?: string; tenantName: string; renderedText: string; fileName: string }>>;
+  onCreateLease: (payload: { unitId: string; tenantId: string; startDate: string; endDate: string }) => Promise<ServerLeaseRecord>;
+}) {
+  const [propertyId, setPropertyId] = useState("");
+  const [unitId, setUnitId] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [name, setName] = useState("");
+  const [fileName, setFileName] = useState("");
+  const [templateText, setTemplateText] = useState("");
+  const [status, setStatus] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [generated, setGenerated] = useState<Array<{ unitId: string; tenantId?: string; tenantName: string; renderedText: string; fileName: string }>>([]);
+  const assignedUnits = units.filter((unit) => unit.propertyId === propertyId && unit.tenantId);
+  const selectedUnit = assignedUnits.find((unit) => unit.id === unitId);
+
+  async function readTemplateFile(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (file.size > 1_000_000) {
+      setStatus("Template text files must be smaller than 1 MB.");
+      event.target.value = "";
+      return;
+    }
+    setFileName(file.name);
+    setTemplateText(await file.text());
+    if (!name) setName(file.name.replace(/\.[^.]+$/, ""));
+  }
+
+  async function saveTemplate() {
+    if (!propertyId || !name.trim() || !templateText.trim()) {
+      setStatus("Choose a property and provide a template name and text.");
+      return;
+    }
+    setBusy(true);
+    setStatus("Saving lease template...");
+    try {
+      await onUploadTemplate({ propertyId, name: name.trim(), fileName: fileName || undefined, templateText });
+      setStatus("Lease template saved for this property.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not save lease template.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function generate() {
+    if (!propertyId) {
+      setStatus("Choose a property first.");
+      return;
+    }
+    setBusy(true);
+    setStatus("Generating lease documents from recorded lease details...");
+    try {
+      const result = await onGenerateLeases({ propertyId });
+      setGenerated(result);
+      setStatus(result.length ? `Generated ${result.length} lease document${result.length === 1 ? "" : "s"}.` : "No recorded leases were found for this property.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not generate lease documents.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function recordLease() {
+    if (!selectedUnit?.tenantId || !startDate || !endDate || startDate > endDate) {
+      setStatus("Select an occupied unit and enter a valid lease start and end date.");
+      return;
+    }
+    setBusy(true);
+    setStatus("Saving lease record...");
+    try {
+      const lease = await onCreateLease({ unitId: selectedUnit.id, tenantId: selectedUnit.tenantId, startDate, endDate });
+      setStatus(`Lease recorded for ${tenants.find((tenant) => tenant.id === lease.tenantId)?.name ?? "tenant"}, unit ${lease.unitLabel}.`);
+      setUnitId("");
+      setStartDate("");
+      setEndDate("");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not save lease record.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const propertyLeases = leases.filter((lease) => lease.propertyId === propertyId);
+
+  return (
+    <section className="content-grid">
+      <article className="panel wide-panel">
+        <div className="panel-heading"><div><span>Template library</span><h3>Upload lease template</h3></div><FileText /></div>
+        <div className="form-panel">
+          <label>Property<select required value={propertyId} onChange={(event) => setPropertyId(event.target.value)}><option value="">Select property</option>{properties.map((property) => <option key={property.id} value={property.id}>{property.name}</option>)}</select></label>
+          <label>Template name<input autoComplete="off" value={name} onChange={(event) => setName(event.target.value)} placeholder="Lease template name" /></label>
+          <label>Upload plain-text template (.txt)<input type="file" accept=".txt,text/plain" onChange={readTemplateFile} /></label>
+          <label>Lease form text<textarea rows={10} value={templateText} onChange={(event) => setTemplateText(event.target.value)} placeholder="Paste your approved lease wording here. Use {{tenantName}}, {{tenantEmail}}, {{tenantPhone}}, {{propertyName}}, {{propertyAddress}}, {{unitLabel}}, {{rentAmount}}, {{depositAmount}}, {{leaseStart}}, and {{leaseEnd}} for tenant-specific details." /></label>
+          <button type="button" className="primary-action" disabled={busy} onClick={saveTemplate}>{busy ? "Saving..." : "Save template"}</button>
+          {status && <p className="status-note" role="status">{status}</p>}
         </div>
       </article>
-      <article className="panel">
-        <div className="panel-heading"><div><span>Utilities</span><h3>Bills due</h3></div></div>
-        <div className="bill-grid tenant-bills">
-          {dueBills.map((bill) => <div className={`bill-card ${bill.tone}`} key={bill.vendor}><i /><strong>{bill.vendor}</strong><span>{bill.date}</span><b>{formatMoney(bill.usdAmount, currency)}</b></div>)}
+      <article className="panel wide-panel">
+        <div className="panel-heading"><div><span>Recorded leases</span><h3>Generate tenant documents</h3></div></div>
+        <p className="muted-copy">Documents are generated only for existing lease records. Dates, rent, and tenant details are taken from the database.</p>
+        {propertyId && <p>{propertyLeases.length} lease record{propertyLeases.length === 1 ? "" : "s"} for this property.</p>}
+        <div className="form-grid">
+          <label>Occupied unit<select value={unitId} onChange={(event) => setUnitId(event.target.value)}><option value="">Select unit and tenant</option>{assignedUnits.map((unit) => <option key={unit.id} value={unit.id}>{unit.label} · {tenants.find((tenant) => tenant.id === unit.tenantId)?.name ?? "Assigned tenant"}</option>)}</select></label>
+          <label>Lease starts<input type="date" autoComplete="off" value={startDate} onChange={(event) => setStartDate(event.target.value)} /></label>
+          <label>Lease ends<input type="date" autoComplete="off" value={endDate} onChange={(event) => setEndDate(event.target.value)} /></label>
         </div>
+        <button type="button" className="secondary-action" disabled={busy || !propertyId} onClick={recordLease}>Record lease</button>
+        <button type="button" className="secondary-action" disabled={busy || !propertyId} onClick={generate}>Generate leases</button>
+        {generated.map((lease) => <div className="lease-preview-card" key={lease.unitId}><strong>{lease.tenantName}</strong><span>{lease.fileName}</span><button type="button" onClick={() => downloadFile(lease.fileName, lease.renderedText)}>Download lease</button></div>)}
       </article>
-    </>
+    </section>
   );
 }
 
@@ -1310,9 +1461,9 @@ function PropertiesPage({
     contractFee: "",
     managementQuote: "",
     valuation: "",
-    templateName: "Standard lease agreement",
-    templateFileName: "lease-agreement-template.docx",
-    templateText: "This lease agreement is between {{tenantName}} and {{propertyName}} for unit {{unitLabel}} at {{propertyAddress}} with monthly rent of {{rentAmount}}."
+    templateName: "",
+    templateFileName: "",
+    templateText: ""
   });
   const [unitsForm, setUnitsForm] = useState<Array<{ block: string; floor: string; number: string; rent: string; deposit: string; leaseMonths: string; status: string }>>([
     { block: "", floor: "", number: "", rent: "", deposit: "", leaseMonths: "12", status: "vacant" }
@@ -1461,15 +1612,9 @@ function PropertiesPage({
         contractFee: Number(listingForm.contractFee || 0),
         managementQuote: listingForm.managementQuote,
         valuation: Number(listingForm.valuation || 0),
-        agreementTemplateUrl: `https://rentflow.local/templates/${listingForm.templateFileName}`
+        agreementTemplateUrl: undefined
       });
       if (!property) throw new Error("Could not create listing.");
-      await onUploadAgreementTemplate({
-        propertyId: property.id,
-        name: listingForm.templateName,
-        fileName: listingForm.templateFileName,
-        templateText: listingForm.templateText
-      });
       for (const unit of unitsForm) {
         if (!unit.rent || (!unit.block && !unit.floor && !unit.number)) {
           if (unit.rent) {
@@ -1501,8 +1646,7 @@ function PropertiesPage({
       setListingForm({
         name: "", address: "", street: "", location: "", electricityPrice: "", garbagePrice: "", waterPrice: "",
         propertyType: "Apartments", contactName: "", contactPhone: "", contactEmail: "", contractFee: "", managementQuote: "",
-        valuation: "", templateName: "Standard lease agreement", templateFileName: "lease-agreement-template.docx",
-        templateText: "This lease agreement is between {{tenantName}} and {{propertyName}} for unit {{unitLabel}} at {{propertyAddress}} with monthly rent of {{rentAmount}}."
+        valuation: "", templateName: "", templateFileName: "", templateText: ""
       });
       setUnitsForm([{ block: "", floor: "", number: "", rent: "", deposit: "", leaseMonths: "12", status: "vacant" }]);
       setManagingPropertyId(property.id);
@@ -1799,10 +1943,7 @@ function PropertiesPage({
               <label>Contract fee<input value={listingForm.contractFee} onChange={(event) => setListingForm({ ...listingForm, contractFee: event.target.value })} placeholder="2200" /></label>
               <label>Management quote<input value={listingForm.managementQuote} onChange={(event) => setListingForm({ ...listingForm, managementQuote: event.target.value })} placeholder="10% monthly" /></label>
               <label>Valuation<input value={listingForm.valuation} onChange={(event) => setListingForm({ ...listingForm, valuation: event.target.value })} placeholder="4200000" /></label>
-              <label>Template name<input value={listingForm.templateName} onChange={(event) => setListingForm({ ...listingForm, templateName: event.target.value })} /></label>
-              <label>Template file name<input value={listingForm.templateFileName} onChange={(event) => setListingForm({ ...listingForm, templateFileName: event.target.value })} /></label>
             </div>
-            <label>Agreement template<textarea value={listingForm.templateText} onChange={(event) => setListingForm({ ...listingForm, templateText: event.target.value })} rows={4} /></label>
             <div className="unit-grid">
               {unitsForm.map((unit, index) => (
                 <div key={index} className="unit-card">
@@ -2472,10 +2613,10 @@ function VisitorApplicationPage({ propertyId, unitId }: { propertyId: string; un
         {option && status.startsWith("Application submitted") ? (
           <p className="status-note" role="status">{status}</p>
         ) : (
-          <form onSubmit={submit}>
-            <label>Full name<input required autoComplete="name" value={form.visitorName} onChange={(event) => setForm({ ...form, visitorName: event.target.value })} /></label>
-            <label>Contact number<input required autoComplete="tel" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} /></label>
-            <label>Email<input required type="email" autoComplete="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label>
+          <form onSubmit={submit} autoComplete="off">
+            <label>Full name<input required autoComplete="off" value={form.visitorName} onChange={(event) => setForm({ ...form, visitorName: event.target.value })} /></label>
+            <label>Contact number<input required autoComplete="off" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} /></label>
+            <label>Email<input required type="email" autoComplete="off" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label>
             <label>Reason for visit<textarea required value={form.reason} onChange={(event) => setForm({ ...form, reason: event.target.value })} /></label>
             <label>Destination<input required value={form.destination} onChange={(event) => setForm({ ...form, destination: event.target.value })} placeholder={`Unit ${option?.unitLabel ?? ""}`} /></label>
             {status && <p className="status-note" role="status">{status}</p>}
@@ -2660,7 +2801,7 @@ function AdminPage({ role, properties, accessToken }: { role: Role; properties: 
     name: "",
     email: "",
     phone: "",
-    password: "Tenant@2026",
+    password: "",
     propertyId: properties[0]?.id ?? ""
   });
   const [managementStatus, setManagementStatus] = useState("");
@@ -2704,7 +2845,7 @@ function AdminPage({ role, properties, accessToken }: { role: Role; properties: 
       });
       const linkedProperty = properties.find((property) => property.id === managementForm.propertyId)?.name ?? "selected property";
       setManagementStatus(`Management account created for ${result.user.name} and linked to ${linkedProperty}.`);
-      setManagementForm({ name: "", email: "", phone: "", password: "Tenant@2026", propertyId: properties[0]?.id ?? "" });
+      setManagementForm({ name: "", email: "", phone: "", password: "", propertyId: properties[0]?.id ?? "" });
     } catch (error) {
       setManagementStatus(error instanceof Error ? error.message : "Unable to create the management account.");
     }
@@ -2797,7 +2938,7 @@ function AdminPage({ role, properties, accessToken }: { role: Role; properties: 
           <label>Name<input value={managementForm.name} onChange={(event) => setManagementForm({ ...managementForm, name: event.target.value })} placeholder="Jane Wambui" /></label>
           <label>Email<input value={managementForm.email} onChange={(event) => setManagementForm({ ...managementForm, email: event.target.value })} placeholder="jane@rentflow.app" /></label>
           <label>Phone<input value={managementForm.phone} onChange={(event) => setManagementForm({ ...managementForm, phone: event.target.value })} placeholder="+254700123456" /></label>
-          <label>Default password<input value={managementForm.password} onChange={(event) => setManagementForm({ ...managementForm, password: event.target.value })} placeholder="Tenant@2026" /></label>
+          <label>Initial password<input autoComplete="new-password" value={managementForm.password} onChange={(event) => setManagementForm({ ...managementForm, password: event.target.value })} placeholder="Set an initial password" /></label>
           <label>Property<select value={managementForm.propertyId} onChange={(event) => setManagementForm({ ...managementForm, propertyId: event.target.value })}>
             <option value="">Select a listing</option>
             {properties.map((property) => <option key={property.id} value={property.id}>{property.name}</option>)}
@@ -2880,6 +3021,8 @@ function TabContent({
   onUpdateVisitorRecord,
   onCheckInVisitor,
   onCheckOutVisitor,
+  onCreateLease,
+  leaseRecords,
   accessToken
 }: {
   role: Role;
@@ -2919,6 +3062,8 @@ function TabContent({
   onUpdateVisitorRecord: (id: string, payload: Partial<VisitorPassRecord>) => Promise<VisitorPassRecord | null>;
   onCheckInVisitor: (id: string) => Promise<VisitorPassRecord | null>;
   onCheckOutVisitor: (id: string) => Promise<VisitorPassRecord | null>;
+  onCreateLease: (payload: { unitId: string; tenantId: string; startDate: string; endDate: string }) => Promise<ServerLeaseRecord>;
+  leaseRecords: ServerLeaseRecord[];
   accessToken: string | null;
 }) {
   if (activeTab === "Overview" && role === "Tenant") {
@@ -2931,6 +3076,9 @@ function TabContent({
   if (activeTab === "Messaging") return <section className="messaging-grid"><MessagingCenter role={role} threads={threads} messages={messages} notifications={notifications} onLoadThread={onLoadThread} onSendMessage={onSendMessage} onSendPushAlert={onSendPushAlert} /><NoticesPage role={role} notifications={notifications} properties={properties} onSendNotice={onSendNotice} /></section>;
   if (activeTab === "Notices") return <NoticesPage role={role} notifications={notifications} properties={properties} onSendNotice={onSendNotice} />;
   if (activeTab === "Visitors") return <VisitorsPage records={visitorRecords} onCheckIn={onCheckInVisitor} onCheckOut={onCheckOutVisitor} />;
+  if (activeTab === "Lease") return role === "Tenant"
+    ? <TenantLeasePage leases={leaseRecords.filter((lease) => lease.tenantId === currentUser?.id)} />
+    : <ManagementLeasePage properties={properties} units={units} tenants={tenants} leases={leaseRecords} onUploadTemplate={onUploadAgreementTemplate} onGenerateLeases={onGenerateLeaseDocuments} onCreateLease={onCreateLease} />;
   if (activeTab === "Reports") return <ReportsPage role={role} currency={currency} />;
   if (activeTab === "Security") return <SecurityPage role={role} securityRecords={securityRecords} onAddSecurityRecord={onAddSecurityRecord} />;
   if (activeTab === "Profile") return <ProfilePage role={role} />;
@@ -2979,7 +3127,7 @@ function LandingPage({ onSelectMode }: { onSelectMode: (mode: "login" | "signup"
 }
 
 function PasswordChangeForm({ onSubmit, error }: { onSubmit: (payload: { currentPassword: string; newPassword: string; confirmPassword: string }) => Promise<boolean>; error?: string }) {
-  const [currentPassword, setCurrentPassword] = useState("Tenant@2026");
+  const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [status, setStatus] = useState("");
@@ -3004,15 +3152,15 @@ function PasswordChangeForm({ onSubmit, error }: { onSubmit: (payload: { current
     <>
       <label>
         Current password
-        <input value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} type="password" placeholder="Current password" />
+        <input autoComplete="off" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} type="password" placeholder="Current password" />
       </label>
       <label>
         New password
-        <input value={newPassword} onChange={(event) => setNewPassword(event.target.value)} type="password" placeholder="Enter new password" />
+        <input autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} type="password" placeholder="New password" />
       </label>
       <label>
         Confirm password
-        <input value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} type="password" placeholder="Repeat new password" />
+        <input autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} type="password" placeholder="Confirm new password" />
       </label>
       {status && <p className="status-note error">{status}</p>}
       {error && <p className="status-note error">{error}</p>}
@@ -3108,34 +3256,35 @@ function AuthPage({ mode, onMode, onLogin, onSignup, onLegal, error, loading }: 
         </div>
         <h1>{mode === "login" ? "Sign in to your account" : "Create tenant account"}</h1>
         <div className="auth-toggle">
-          <button className={mode === "login" ? "selected" : ""} onClick={() => onMode("login")}>Sign in</button>
-          <button className={mode === "signup" ? "selected" : ""} onClick={() => onMode("signup")}>Sign up</button>
+          <button type="button" className={mode === "login" ? "selected" : ""} onClick={() => onMode("login")}>Sign in</button>
+          <button type="button" className={mode === "signup" ? "selected" : ""} onClick={() => onMode("signup")}>Sign up</button>
         </div>
+        <form autoComplete="off" onSubmit={(event) => { event.preventDefault(); submit(); }}>
         <label>
           Email
-          <input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" />
+          <input autoComplete="off" name="rentflow-login-email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" />
         </label>
         <label>
           Password
-          <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" placeholder="Enter password" />
+          <input autoComplete="new-password" name="rentflow-login-password" value={password} onChange={(event) => setPassword(event.target.value)} type="password" placeholder="Enter password" />
         </label>
         {mode === "signup" && (
           <>
             <label>
               Full name
-              <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Amina Otieno" />
+              <input autoComplete="off" value={name} onChange={(event) => setName(event.target.value)} placeholder="Full name" />
             </label>
             <label>
               Phone number
-              <input value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="+254700000101" />
+              <input autoComplete="off" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="Phone number" />
             </label>
             <label>
               Apartment or listing name
-              <input value={apartment} onChange={(event) => setApartment(event.target.value)} placeholder="Westlands Heights" />
+              <input autoComplete="off" value={apartment} onChange={(event) => setApartment(event.target.value)} placeholder="Apartment or listing name" />
             </label>
             <label>
               House/room number
-              <input value={houseNumber} onChange={(event) => setHouseNumber(event.target.value)} placeholder="A-12" />
+              <input autoComplete="off" value={houseNumber} onChange={(event) => setHouseNumber(event.target.value)} placeholder="House or room number" />
             </label>
             <p className="small-copy">Tenant signup is only available for rental occupants. Management and owner accounts are created by admin.</p>
           </>
@@ -3162,9 +3311,10 @@ function AuthPage({ mode, onMode, onLogin, onSignup, onLegal, error, loading }: 
         </p>
         {status && <p className="status-note error">{status}</p>}
         {error && <p className="status-note error">{error}</p>}
-        <button className="primary-cta" type="button" onClick={submit} disabled={loading}>
+        <button className="primary-cta" type="submit" disabled={loading}>
           {loading ? "Processing..." : mode === "login" ? "Open dashboard" : "Create account"}
         </button>
+        </form>
       </section>
     </main>
   );
@@ -3189,19 +3339,13 @@ function AppShell() {
   const [notifications, setNotifications] = useState<ServerNotification[]>([]);
   const [securityRecords, setSecurityRecords] = useState<ServerSecurityRecord[]>([]);
   const [visitorRecords, setVisitorRecords] = useState<VisitorPassRecord[]>([]);
+  const [leaseRecords, setLeaseRecords] = useState<ServerLeaseRecord[]>([]);
   const [securityChatMessages, setSecurityChatMessages] = useState<Array<{ id: string; agent: string; author: string; time: string; body: string }>>([]);
   const [wsConnected, setWsConnected] = useState(false);
   const [authError, setAuthError] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const availableTabs = useMemo(() => roleTabs[role], [role]);
-
-  const defaultCredential: Record<Role, { email: string; password: string }> = {
-    Tenant: { email: "tenant@test.com", password: "password" },
-    Management: { email: "caretaker@test.com", password: "password" },
-    Owner: { email: "owner@test.com", password: "password" },
-    "Super Admin": { email: "admin@test.com", password: "password" }
-  };
 
   useEffect(() => {
     if (!accessToken) return;
@@ -3245,6 +3389,16 @@ function AppShell() {
   useEffect(() => {
     if (!accessToken) return;
     fetchAppData(accessToken);
+  }, [accessToken]);
+
+  useEffect(() => {
+    if (!accessToken) return;
+    fetchJson<{ data: ServerLeaseRecord[] }>("/api/leases", { headers: getAuthHeaders(accessToken) })
+      .then((result) => setLeaseRecords(result.data))
+      .catch((error) => {
+        setLeaseRecords([]);
+        console.error("Failed to load lease records:", error);
+      });
   }, [accessToken]);
 
   useEffect(() => {
@@ -3509,17 +3663,23 @@ function AppShell() {
 
   async function generateLeaseDocuments(payload: { propertyId: string; unitIds?: string[] }) {
     if (!accessToken) return [];
-    try {
-      const result = await fetchJson<{ data: Array<{ unitId: string; tenantId?: string; tenantName: string; renderedText: string; fileName: string }> }>("/api/agreements/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...getAuthHeaders(accessToken) },
-        body: JSON.stringify(payload)
-      });
-      return result.data;
-    } catch (error) {
-      console.error(error);
-      return [];
-    }
+    const result = await fetchJson<{ data: Array<{ unitId: string; tenantId?: string; tenantName: string; renderedText: string; fileName: string }> }>("/api/agreements/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...getAuthHeaders(accessToken) },
+      body: JSON.stringify(payload)
+    });
+    return result.data;
+  }
+
+  async function createLease(payload: { unitId: string; tenantId: string; startDate: string; endDate: string }) {
+    if (!accessToken) throw new Error("Sign in again before recording a lease.");
+    const result = await fetchJson<{ data: ServerLeaseRecord }>("/api/leases", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...getAuthHeaders(accessToken) },
+      body: JSON.stringify(payload)
+    });
+    setLeaseRecords((current) => [result.data, ...current.filter((lease) => lease.id !== result.data.id)]);
+    return result.data;
   }
 
   async function approvePayment(payload: { paymentId: string; status?: string }) {
@@ -3686,6 +3846,7 @@ function AppShell() {
     setNotifications([]);
     setSecurityRecords([]);
     setMaintenanceData([]);
+    setLeaseRecords([]);
   }
 
   function switchRole(nextRole: Role) {
@@ -3833,6 +3994,8 @@ function AppShell() {
           onUpdateVisitorRecord={updateVisitorRecord}
           onCheckInVisitor={checkInVisitor}
           onCheckOutVisitor={checkOutVisitor}
+          onCreateLease={createLease}
+          leaseRecords={leaseRecords}
           accessToken={accessToken}
         />
       </section>

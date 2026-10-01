@@ -50,6 +50,8 @@ import {
   listMessageThreads,
   listNotificationSchedules,
   listLeases,
+  listTenantLeaseRecords,
+  createLeaseRecord,
   listMaintenanceTickets,
   listPayments,
   listPaymentAccounts,
@@ -448,9 +450,7 @@ app.get("/api/notifications", authenticate, async (req, res) => {
 });
 
 function fillAgreementTemplate(templateText: string, values: Record<string, string>) {
-  return Object.entries(values).reduce((text, [key, value]) => {
-    return text.replace(new RegExp(`{{\s*${key}\s*}}`, "gi"), value);
-  }, templateText);
+  return templateText.replace(/{{\s*([a-zA-Z0-9_]+)\s*}}/g, (placeholder, key: string) => values[key] ?? placeholder);
 }
 
 app.get("/api/agreements/templates", authenticate, async (req, res) => {
@@ -460,8 +460,12 @@ app.get("/api/agreements/templates", authenticate, async (req, res) => {
 
 app.post("/api/agreements/templates", authenticate, requireRoles("caretaker", "owner", "super_admin"), async (req, res) => {
   try {
+    const propertyId = String(req.body.propertyId ?? "");
+    if (!propertyId) return res.status(400).json({ error: "propertyId is required." });
+    const allowedPropertyIds = await getVisitorPropertyIds(req.user!);
+    if (!allowedPropertyIds.includes(propertyId)) return res.status(403).json({ error: "You do not have access to this property." });
     const template = await createAgreementTemplate(req.user!, {
-      propertyId: String(req.body.propertyId ?? ""),
+      propertyId,
       name: String(req.body.name ?? "Lease agreement template"),
       templateText: String(req.body.templateText ?? ""),
       fileName: req.body.fileName ? String(req.body.fileName) : undefined
@@ -479,44 +483,41 @@ app.post("/api/agreements/generate", authenticate, requireRoles("caretaker", "ow
   if (!propertyId) return res.status(400).json({ error: "propertyId is required" });
 
   try {
-    const templates = await listAgreementTemplates(req.user!).catch(() => []);
+    const allowedPropertyIds = await getVisitorPropertyIds(req.user!);
+    if (!allowedPropertyIds.includes(propertyId)) return res.status(403).json({ error: "You do not have access to this property." });
+    const templates = await listAgreementTemplates(req.user!);
     const template = templates.find((item) => item.propertyId === propertyId);
     if (!template) return res.status(404).json({ error: "No agreement template found for this property" });
 
-    const propertyList = await listProperties() as Array<{ id: string; name: string; address: string }>;
-    const property = propertyList.find((item) => item.id === propertyId);
-    if (!property) return res.status(404).json({ error: "Property not found" });
-
     const unitIds = Array.isArray(req.body.unitIds) ? req.body.unitIds.map(String) : [];
-    const unitData = await listUnits() as Array<{ id: string; propertyId: string; tenantId?: string; label: string; rent?: number; deposit?: number }>;
-    const selectedUnits = unitIds.length > 0
-      ? unitData.filter((unit) => unitIds.includes(String(unit.id)))
-      : unitData.filter((unit) => unit.propertyId === propertyId && unit.tenantId);
+    const leases = await listLeases() as Array<Record<string, unknown>>;
+    const selectedLeases = leases.filter((lease) => String(lease.propertyId) === propertyId &&
+      (unitIds.length === 0 || unitIds.includes(String(lease.unitId))));
+    if (selectedLeases.length === 0) return res.status(404).json({ error: "No lease records exist for this property and selection." });
 
-    const agreementTemplate = template as { id: string; templateText: string };
-    const leaseItems = await Promise.all(selectedUnits.map(async (unit) => {
-      const tenant = unit.tenantId ? await findUserById(unit.tenantId).catch(() => null) : null;
+    const leaseItems = selectedLeases.map((lease) => {
       const values: Record<string, string> = {
-        tenantName: tenant?.name ?? "Tenant",
-        tenantEmail: tenant?.email ?? "tenant@example.com",
-        tenantPhone: tenant?.phone ?? "N/A",
-        propertyName: property.name,
-        propertyAddress: property.address,
-        unitLabel: unit.label,
-        rentAmount: String(unit.rent ?? 0),
-        depositAmount: String(unit.deposit ?? 0),
-        leaseStart: new Date().toISOString().split("T")[0],
-        leaseEnd: new Date(Date.now() + 1000 * 60 * 60 * 24 * 365).toISOString().split("T")[0],
-        currentDate: new Date().toISOString().split("T")[0]
+        tenantName: String(lease.tenantName ?? ""),
+        tenantEmail: String(lease.tenantEmail ?? ""),
+        tenantPhone: String(lease.tenantPhone ?? ""),
+        propertyName: String(lease.propertyName ?? ""),
+        propertyAddress: String(lease.propertyAddress ?? ""),
+        unitLabel: String(lease.unitLabel ?? ""),
+        rentAmount: String(lease.rentAmount ?? ""),
+        depositAmount: String(lease.deposit ?? ""),
+        leaseStart: String(lease.startDate ?? ""),
+        leaseEnd: String(lease.endDate ?? ""),
+        currentDate: new Date().toISOString().slice(0, 10)
       };
       return {
-        unitId: unit.id,
-        tenantId: unit.tenantId,
-        tenantName: tenant?.name ?? "Unassigned tenant",
-        renderedText: fillAgreementTemplate(agreementTemplate.templateText, values),
-        fileName: `${property.name.replace(/\s+/g, "_")}-${unit.label}-lease.txt`
+        leaseId: String(lease.id),
+        unitId: String(lease.unitId),
+        tenantId: String(lease.tenantId),
+        tenantName: String(lease.tenantName ?? ""),
+        renderedText: fillAgreementTemplate(String(template.templateText), values),
+        fileName: `${String(lease.propertyName).replace(/\s+/g, "_")}-${String(lease.unitLabel)}-lease.txt`
       };
-    }));
+    });
 
     await createAuditLog(req.user!.id, "GENERATE_LEASES", "property", propertyId, { templateId: template.id, generated: leaseItems.length }).catch(() => undefined);
     res.json({ data: leaseItems });
@@ -851,8 +852,69 @@ app.post("/api/expenses", authenticate, requireRoles("caretaker", "owner", "supe
 });
 
 app.get("/api/leases", authenticate, async (_req, res) => {
-  const data = await listLeases();
-  res.json({ data });
+  const request = _req;
+  try {
+    if (request.user!.role === "tenant") {
+      const [tenantLeases, templates] = await Promise.all([
+        listTenantLeaseRecords(request.user!.id),
+        listAgreementTemplates(request.user!)
+      ]);
+      const leaseData = (tenantLeases as Array<Record<string, unknown>>).map((lease) => {
+        const template = templates.find((item) => item.propertyId === String(lease.propertyId));
+        if (!template) return { ...lease, templateAvailable: false };
+        const values: Record<string, string> = {
+          tenantName: request.user!.name,
+          tenantEmail: request.user!.email,
+          tenantPhone: request.user!.phone,
+          propertyName: String(lease.propertyName ?? ""),
+          propertyAddress: String(lease.propertyAddress ?? ""),
+          unitLabel: String(lease.unitLabel ?? ""),
+          rentAmount: String(lease.rentAmount ?? ""),
+          depositAmount: String(lease.depositAmount ?? ""),
+          leaseStart: String(lease.startDate ?? ""),
+          leaseEnd: String(lease.endDate ?? ""),
+          currentDate: new Date().toISOString().slice(0, 10)
+        };
+        return {
+          ...lease,
+          templateName: String(template.name),
+          templateAvailable: true,
+          renderedText: fillAgreementTemplate(String(template.templateText), values),
+          fileName: `${String(lease.propertyName).replace(/\s+/g, "_")}-${String(lease.unitLabel)}-lease.txt`
+        };
+      });
+      return res.json({ data: leaseData, storage: "postgres" });
+    }
+    const allowedPropertyIds = await getVisitorPropertyIds(request.user!);
+    const data = (await listLeases() as Array<Record<string, unknown>>)
+      .filter((lease) => allowedPropertyIds.includes(String(lease.propertyId)));
+    res.json({ data, storage: "postgres" });
+  } catch (error) {
+    res.status(503).json({ error: error instanceof Error ? error.message : "Could not load lease records." });
+  }
+});
+
+app.post("/api/leases", authenticate, requireRoles("caretaker", "owner", "super_admin"), async (req, res) => {
+  const unitId = String(req.body.unitId ?? "");
+  const tenantId = String(req.body.tenantId ?? "");
+  const startDate = String(req.body.startDate ?? "");
+  const endDate = String(req.body.endDate ?? "");
+  if (!unitId || !tenantId || !startDate || !endDate || Number.isNaN(Date.parse(startDate)) || Number.isNaN(Date.parse(endDate)) || startDate > endDate) {
+    return res.status(400).json({ error: "Choose an assigned tenant/unit and enter a valid lease date range." });
+  }
+  try {
+    const unitData = await listUnits() as Array<{ id: string; propertyId: string; tenantId?: string }>;
+    const unit = unitData.find((item) => item.id === unitId);
+    if (!unit || unit.tenantId !== tenantId) return res.status(400).json({ error: "The tenant must be assigned to the selected unit first." });
+    const allowedPropertyIds = await getVisitorPropertyIds(req.user!);
+    if (!allowedPropertyIds.includes(unit.propertyId)) return res.status(403).json({ error: "You do not have access to this property." });
+    const lease = await createLeaseRecord({ unitId, tenantId, startDate, endDate });
+    if (!lease) return res.status(500).json({ error: "Lease record was not returned after saving." });
+    await createAuditLog(req.user!.id, "CREATE_LEASE", "lease", String(lease.id), { unitId, tenantId }).catch(() => undefined);
+    res.status(201).json({ data: lease, storage: "postgres" });
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : "Could not save lease record." });
+  }
 });
 
 app.get("/api/payments", authenticate, async (req, res) => {
