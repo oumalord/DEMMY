@@ -135,6 +135,51 @@ interface ServerNotification {
   createdAt: string;
 }
 
+interface GroupedNotice {
+  id: string;
+  userId?: string;
+  propertyId?: string;
+  template: string;
+  payload: Record<string, unknown>;
+  createdAt: string;
+  channels: string[];
+}
+
+function groupNotifications(notifications: ServerNotification[]): GroupedNotice[] {
+  const groups = new Map<string, GroupedNotice>();
+  for (const notice of notifications) {
+    const noticeGroupId = typeof notice.payload.noticeGroupId === "string" ? notice.payload.noticeGroupId : "";
+    const createdAt = Date.parse(notice.createdAt);
+    const legacyTimeBucket = Number.isFinite(createdAt) ? Math.floor(createdAt / 60_000) : notice.createdAt;
+    const legacyKey = JSON.stringify([
+      notice.payload.senderId ?? notice.userId ?? "",
+      notice.propertyId ?? notice.payload.propertyId ?? "",
+      notice.template,
+      notice.payload.title ?? "",
+      notice.payload.body ?? "",
+      notice.payload.attachment ?? "",
+      legacyTimeBucket
+    ]);
+    const id = noticeGroupId || `legacy:${legacyKey}`;
+    const current = groups.get(id);
+    if (current) {
+      if (!current.channels.includes(notice.channel.toLowerCase())) current.channels.push(notice.channel.toLowerCase());
+      if (notice.createdAt > current.createdAt) current.createdAt = notice.createdAt;
+      continue;
+    }
+    groups.set(id, {
+      id,
+      userId: notice.userId,
+      propertyId: notice.propertyId,
+      template: notice.template,
+      payload: notice.payload,
+      createdAt: notice.createdAt,
+      channels: [notice.channel.toLowerCase()]
+    });
+  }
+  return Array.from(groups.values()).sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+}
+
 function mergeNotifications(current: ServerNotification[], incoming: ServerNotification[]) {
   const byId = new Map<string, ServerNotification>();
   for (const notification of [...incoming, ...current]) {
@@ -2482,12 +2527,13 @@ function NoticesPage({ role, notifications, properties, onSendNotice, currentUse
     }
     return true;
   });
+  const groupedVisibleNotices = groupNotifications(visibleNotices);
   const sentNotices = currentUserId
-    ? visibleNotices.filter((notice) => notice.payload?.senderId === currentUserId)
+    ? groupedVisibleNotices.filter((notice) => notice.payload?.senderId === currentUserId)
     : [];
   const folderNotices = folder === "Sent"
     ? sentNotices
-    : visibleNotices.filter((notice) => notice.payload?.senderId !== currentUserId);
+    : groupedVisibleNotices.filter((notice) => notice.payload?.senderId !== currentUserId);
 
   async function handleFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -2525,7 +2571,7 @@ function NoticesPage({ role, notifications, properties, onSendNotice, currentUse
       <div className="panel-heading"><div><span>Read notices</span><h3>Management notices</h3></div><Megaphone /></div>
       {showSentFolder && role !== "Tenant" && (
         <div className="notice-folder-tabs" role="tablist" aria-label="Notice folders">
-          <button type="button" role="tab" aria-selected={folder === "Inbox"} className={folder === "Inbox" ? "selected" : ""} onClick={() => setFolder("Inbox")}>Inbox <span>{visibleNotices.length - sentNotices.length}</span></button>
+          <button type="button" role="tab" aria-selected={folder === "Inbox"} className={folder === "Inbox" ? "selected" : ""} onClick={() => setFolder("Inbox")}>Inbox <span>{groupedVisibleNotices.length - sentNotices.length}</span></button>
           <button type="button" role="tab" aria-selected={folder === "Sent"} className={folder === "Sent" ? "selected" : ""} onClick={() => setFolder("Sent")}>Sent <span>{sentNotices.length}</span></button>
         </div>
       )}
@@ -2558,7 +2604,9 @@ function NoticesPage({ role, notifications, properties, onSendNotice, currentUse
           {folderNotices.length > 0 ? folderNotices.map((notice) => (
             <div key={notice.id} className="notice-entry">
               <div className="notice-entry-meta">
-                <span className={`notice-channel notice-channel-${notice.channel}`}>{notice.channel}</span>
+                <div className="notice-entry-channels" aria-label={`Sent via ${notice.channels.join(", ")}`}>
+                  {notice.channels.map((channel) => <span key={channel} className={`notice-channel notice-channel-${channel}`}>{channel}</span>)}
+                </div>
                 {notice.createdAt && <small>{formatDateTime(notice.createdAt)}</small>}
               </div>
               <strong className="notice-entry-title">{notice.template}</strong>

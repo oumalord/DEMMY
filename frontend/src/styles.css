@@ -3346,6 +3346,13 @@ body {
   margin-bottom: 7px;
 }
 
+.notice-entry-channels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 0;
+}
+
 .notice-entry-meta small {
   color: #535d59;
   font-size: .7rem;
