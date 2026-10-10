@@ -3180,13 +3180,20 @@ function AuthPage({ mode, onMode, onLogin, onSignup, onLegal, error, loading }: 
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [loginFieldsActive, setLoginFieldsActive] = useState(false);
+  const [signupFieldsActive, setSignupFieldsActive] = useState(false);
   const [apartment, setApartment] = useState("");
   const [houseNumber, setHouseNumber] = useState("");
   const [status, setStatus] = useState("");
 
   useEffect(() => {
     setLoginFieldsActive(false);
+    setSignupFieldsActive(false);
   }, [mode]);
+
+  function activateFormFields() {
+    if (mode === "login") setLoginFieldsActive(true);
+    else setSignupFieldsActive(true);
+  }
 
   function handleProviderAuth(provider: "Google" | "Facebook" | "Apple") {
     window.location.assign(`${apiBaseUrl}/api/auth/oauth/${provider.toLowerCase()}`);
@@ -3231,29 +3238,29 @@ function AuthPage({ mode, onMode, onLogin, onSignup, onLegal, error, loading }: 
         <form autoComplete="off" onSubmit={(event) => { event.preventDefault(); submit(); }}>
         <label>
           Email
-          <input autoComplete="off" name="rentflow-login-email" readOnly={mode === "login" && !loginFieldsActive} onFocus={() => setLoginFieldsActive(true)} value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" />
+          <input autoComplete="off" name={mode === "login" ? "rentflow-login-email" : "rentflow-signup-email"} readOnly={mode === "login" ? !loginFieldsActive : !signupFieldsActive} onFocus={activateFormFields} value={email} onChange={(event) => setEmail(event.target.value)} placeholder={mode === "login" ? "you@example.com" : undefined} />
         </label>
         <label>
           Password
-          <input autoComplete="off" name="rentflow-login-password" readOnly={mode === "login" && !loginFieldsActive} onFocus={() => setLoginFieldsActive(true)} value={password} onChange={(event) => setPassword(event.target.value)} type="password" placeholder="Enter password" />
+          <input autoComplete={mode === "login" ? "off" : "new-password"} name={mode === "login" ? "rentflow-login-password" : "rentflow-signup-password"} readOnly={mode === "login" ? !loginFieldsActive : !signupFieldsActive} onFocus={activateFormFields} value={password} onChange={(event) => setPassword(event.target.value)} type="password" placeholder={mode === "login" ? "Enter password" : undefined} />
         </label>
         {mode === "signup" && (
           <>
             <label>
               Full name
-              <input autoComplete="off" value={name} onChange={(event) => setName(event.target.value)} placeholder="Full name" />
+              <input autoComplete="off" name="rentflow-signup-name" readOnly={!signupFieldsActive} onFocus={activateFormFields} value={name} onChange={(event) => setName(event.target.value)} />
             </label>
             <label>
               Phone number
-              <input autoComplete="off" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="Phone number" />
+              <input autoComplete="off" name="rentflow-signup-phone" readOnly={!signupFieldsActive} onFocus={activateFormFields} value={phone} onChange={(event) => setPhone(event.target.value)} />
             </label>
             <label>
               Apartment or listing name
-              <input autoComplete="off" value={apartment} onChange={(event) => setApartment(event.target.value)} placeholder="Apartment or listing name" />
+              <input autoComplete="off" name="rentflow-signup-apartment" readOnly={!signupFieldsActive} onFocus={activateFormFields} value={apartment} onChange={(event) => setApartment(event.target.value)} />
             </label>
             <label>
               House/room number
-              <input autoComplete="off" value={houseNumber} onChange={(event) => setHouseNumber(event.target.value)} placeholder="House or room number" />
+              <input autoComplete="off" name="rentflow-signup-house-number" readOnly={!signupFieldsActive} onFocus={activateFormFields} value={houseNumber} onChange={(event) => setHouseNumber(event.target.value)} />
             </label>
             <p className="small-copy">Tenant signup is only available for rental occupants. Management and owner accounts are created by admin.</p>
           </>
@@ -3313,8 +3320,12 @@ function AppShell() {
   const [wsConnected, setWsConnected] = useState(false);
   const [authError, setAuthError] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
+  const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const availableTabs = useMemo(() => roleTabs[role], [role]);
+  const noticesTabIndex = availableTabs.indexOf("Notices");
+  const mobilePrimaryTabs = noticesTabIndex >= 0 ? availableTabs.slice(0, noticesTabIndex + 1) : availableTabs;
+  const mobileOverflowTabs = noticesTabIndex >= 0 ? availableTabs.slice(noticesTabIndex + 1) : [];
 
   useEffect(() => {
     if (!accessToken) return;
@@ -3975,7 +3986,7 @@ function AppShell() {
       </section>
 
       <nav className="mobile-bottom-nav" aria-label="Mobile navigation">
-        {availableTabs.map((tab) => {
+        {mobilePrimaryTabs.map((tab) => {
           const Icon = tabIcons[tab];
           return (
             <button
@@ -3990,6 +4001,34 @@ function AppShell() {
             </button>
           );
         })}
+        {mobileOverflowTabs.length > 0 && (
+          <div className="mobile-more">
+            <button
+              type="button"
+              className={`mobile-more-trigger ${mobileOverflowTabs.includes(activeTab) ? "selected" : ""}`}
+              aria-label="More"
+              aria-expanded={mobileMoreOpen}
+              aria-haspopup="menu"
+              onClick={() => setMobileMoreOpen((open) => !open)}
+            >
+              <MoreVertical aria-hidden="true" />
+              <span>More</span>
+            </button>
+            {mobileMoreOpen && (
+              <div className="mobile-more-menu" role="menu" aria-label="More navigation">
+                {mobileOverflowTabs.map((tab) => {
+                  const Icon = tabIcons[tab];
+                  return (
+                    <button key={tab} type="button" role="menuitem" className={activeTab === tab ? "selected" : ""} onClick={() => { switchTab(tab); setMobileMoreOpen(false); }}>
+                      <Icon aria-hidden="true" />
+                      <span>{tab}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </nav>
     </main>
   );
