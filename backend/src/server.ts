@@ -1247,7 +1247,7 @@ app.post("/api/notifications/rent-reminder", authenticate, requireRoles("caretak
 app.post("/api/notifications", authenticate, requireRoles("caretaker", "owner", "super_admin"), async (req, res) => {
   const channels = req.body.channels ?? ["sms", "email", "push"];
   const propertyId = req.body.propertyId;
-  const payload = { ...req.body.payload, propertyId };
+  const payload = { ...req.body.payload, propertyId, senderId: req.user!.id, senderName: req.user!.name };
   try {
     const queued = await Promise.all(channels.map((channel: "sms" | "email" | "push" | "whatsapp") =>
       createNotification(req.user!, {

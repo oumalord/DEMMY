@@ -1965,7 +1965,7 @@ function PropertiesPage({
   );
 }
 
-function PaymentsPage({ role, currency, payments, onMakePayment, onApprovePayment }: { role: Role; currency: Currency; payments: ServerPayment[]; onMakePayment: (payload: { amount: number; method: "mpesa" | "mobile_money" | "bank" | "card"; accountName?: string; accountNumber?: string; bankName?: string; phoneNumber?: string; cardNumber?: string; expiry?: string; cvc?: string; }) => Promise<ServerPayment | null>; onApprovePayment: (payload: { paymentId: string; status?: string }) => Promise<ServerPayment | null>; }) {
+function PaymentsPage({ role, currency, payments, properties, units, tenants, currentUser, onMakePayment, onApprovePayment }: { role: Role; currency: Currency; payments: ServerPayment[]; properties: ServerProperty[]; units: ServerUnit[]; tenants: ServerTenant[]; currentUser: BackendUser | null; onMakePayment: (payload: { amount: number; method: "mpesa" | "mobile_money" | "bank" | "card"; accountName?: string; accountNumber?: string; bankName?: string; phoneNumber?: string; cardNumber?: string; expiry?: string; cvc?: string; }) => Promise<ServerPayment | null>; onApprovePayment: (payload: { paymentId: string; status?: string }) => Promise<ServerPayment | null>; }) {
   const [paymentMode, setPaymentMode] = useState<"mpesa" | "mobile_money" | "bank" | "card">("bank");
   const [bankForm, setBankForm] = useState({ bankName: "", accountName: "", accountNumber: "", routingNumber: "" });
   const [mpesaPhone, setMpesaPhone] = useState("");
@@ -2058,6 +2058,15 @@ function PaymentsPage({ role, currency, payments, onMakePayment, onApprovePaymen
                   <button className="secondary-action" onClick={() => approvePayment(item.id)}>Approve</button>
                 ) : null}
                 <button className="secondary-action" onClick={() => {
+                  const tenant = tenants.find((candidate) => candidate.id === item.tenantId) ?? (currentUser?.id === item.tenantId ? currentUser : null);
+                  const unit = units.find((candidate) => candidate.id === item.unitId);
+                  const property = properties.find((candidate) => candidate.id === unit?.propertyId);
+                  const unitDetails = unit
+                    ? [unit.label, unit.block && `Block ${unit.block}`, unit.floor && `Floor ${unit.floor}`, unit.number && `House ${unit.number}`].filter(Boolean).join(" · ")
+                    : item.unitId ?? "N/A";
+                  const escapeReceipt = (value: unknown) => String(value ?? "N/A").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" })[character] ?? character);
+                  const receiptDate = item.paidAt ? new Date(item.paidAt) : new Date();
+                  const receiptStatusClass = item.status.toLowerCase().replace(/[^a-z0-9_-]/g, "");
                   const receiptHTML = `<!DOCTYPE html>
 <html>
 <head>
@@ -2074,7 +2083,7 @@ function PaymentsPage({ role, currency, payments, onMakePayment, onApprovePaymen
     .content { padding: 40px 30px; }
     .section { margin-bottom: 30px; }
     .section-title { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #6b7280; font-weight: 700; margin-bottom: 15px; }
-    .row { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #e5e7eb; font-size: 14px; }
+    .row { display: flex; justify-content: space-between; align-items: center; gap: 14px; padding: 12px 0; border-bottom: 1px solid #e5e7eb; font-size: 14px; }
     .row:last-child { border-bottom: none; }
     .label { color: #6b7280; font-weight: 500; }
     .value { color: #1f2937; font-weight: 600; }
@@ -2087,6 +2096,19 @@ function PaymentsPage({ role, currency, payments, onMakePayment, onApprovePaymen
     .badge.pending { background: #fee2e2; color: #7f1d1d; }
     .footer { background: #f9fafb; padding: 20px 30px; text-align: center; font-size: 12px; color: #6b7280; border-top: 1px solid #e5e7eb; }
     .security-note { font-size: 11px; color: #059669; font-style: italic; margin-top: 10px; }
+    .label { flex: 0 0 auto; }
+    .value { max-width: 68%; overflow-wrap: anywhere; text-align: right; }
+    @media (max-width: 560px) {
+      body { padding: 12px; }
+      .container { width: 100%; border-radius: 8px; }
+      .header { padding: 28px 18px; }
+      .content { padding: 24px 18px; }
+      .section { margin-bottom: 22px; }
+      .row { align-items: flex-start; gap: 10px; padding: 10px 0; font-size: 13px; }
+      .value { max-width: 64%; }
+      .amount-display { gap: 12px; font-size: 20px; }
+      .footer { padding: 18px; overflow-wrap: anywhere; }
+    }
     @media print {
       body { background: white; padding: 0; }
       .container { box-shadow: none; border-radius: 0; }
@@ -2104,36 +2126,66 @@ function PaymentsPage({ role, currency, payments, onMakePayment, onApprovePaymen
         <div class="section-title">Receipt Information</div>
         <div class="row">
           <span class="label">Receipt Number</span>
-          <span class="value">#${item.receiptNumber}</span>
+          <span class="value">#${escapeReceipt(item.receiptNumber)}</span>
         </div>
         <div class="row">
           <span class="label">Date</span>
-          <span class="value">${new Date().toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}</span>
+          <span class="value">${escapeReceipt(receiptDate.toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' }))}</span>
         </div>
         <div class="row">
           <span class="label">Time</span>
-          <span class="value">${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</span>
+          <span class="value">${escapeReceipt(receiptDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }))}</span>
+        </div>
+      </div>
+      <div class="section">
+        <div class="section-title">Tenant Details</div>
+        <div class="row">
+          <span class="label">Tenant</span>
+          <span class="value">${escapeReceipt(tenant?.name ?? "N/A")}</span>
+        </div>
+        <div class="row">
+          <span class="label">Email</span>
+          <span class="value">${escapeReceipt(tenant?.email ?? "N/A")}</span>
+        </div>
+        <div class="row">
+          <span class="label">Phone</span>
+          <span class="value">${escapeReceipt(tenant?.phone ?? "N/A")}</span>
+        </div>
+        <div class="row">
+          <span class="label">Tenant ID</span>
+          <span class="value">${escapeReceipt(item.tenantId)}</span>
+        </div>
+      </div>
+      <div class="section">
+        <div class="section-title">Rental Property</div>
+        <div class="row">
+          <span class="label">Listing</span>
+          <span class="value">${escapeReceipt(property?.name ?? "N/A")}</span>
+        </div>
+        <div class="row">
+          <span class="label">Address</span>
+          <span class="value">${escapeReceipt(property?.address ?? "N/A")}</span>
+        </div>
+        <div class="row">
+          <span class="label">House / Unit</span>
+          <span class="value">${escapeReceipt(unitDetails)}</span>
         </div>
       </div>
       <div class="section">
         <div class="section-title">Payment Details</div>
         <div class="row">
-          <span class="label">Unit</span>
-          <span class="value">${item.unitId ?? 'N/A'}</span>
-        </div>
-        <div class="row">
           <span class="label">Payment Method</span>
-          <span class="value" style="text-transform: uppercase; letter-spacing: 0.5px;">${item.method}</span>
+          <span class="value" style="text-transform: uppercase; letter-spacing: 0.5px;">${escapeReceipt(item.method)}</span>
         </div>
         <div class="row">
           <span class="label">Status</span>
-          <span class="badge ${item.status.toLowerCase()}">${item.status}</span>
+          <span class="badge ${receiptStatusClass}">${escapeReceipt(item.status)}</span>
         </div>
       </div>
       <div class="highlight">
         <div class="section-title" style="margin: 0 0 10px 0;">Transaction Amount</div>
         <div class="amount-display">
-          <span class="amount-label">${currency}</span>
+          <span class="amount-label">${escapeReceipt(currency)}</span>
           <span>${formatMoney(item.amount, currency)}</span>
         </div>
       </div>
@@ -2440,13 +2492,14 @@ function ReportsPage({ role, currency }: { role: Role; currency: Currency }) {
   );
 }
 
-function NoticesPage({ role, notifications, properties, onSendNotice }: { role: Role; notifications: ServerNotification[]; properties?: ServerProperty[]; onSendNotice?: (payload: { template: string; channels?: string[]; payload?: Record<string, unknown>; propertyId?: string }) => Promise<boolean> }) {
+function NoticesPage({ role, notifications, properties, onSendNotice, currentUserId, showSentFolder = false }: { role: Role; notifications: ServerNotification[]; properties?: ServerProperty[]; onSendNotice?: (payload: { template: string; channels?: string[]; payload?: Record<string, unknown>; propertyId?: string }) => Promise<boolean>; currentUserId?: string; showSentFolder?: boolean }) {
   const [title, setTitle] = useState("");
   const [message, setMessage] = useState("");
   const [channels, setChannels] = useState<{ sms: boolean; email: boolean; push: boolean }>({ sms: false, email: false, push: true });
   const [fileData, setFileData] = useState<string | null>(null);
   const [status, setStatus] = useState("");
   const [selectedPropertyId, setSelectedPropertyId] = useState<string>("all");
+  const [folder, setFolder] = useState<"Inbox" | "Sent">("Inbox");
 
   const visibleNotices = notifications.filter((n) => {
     if (role === "Tenant") {
@@ -2458,6 +2511,12 @@ function NoticesPage({ role, notifications, properties, onSendNotice }: { role: 
     }
     return true;
   });
+  const sentNotices = currentUserId
+    ? visibleNotices.filter((notice) => notice.payload?.senderId === currentUserId)
+    : [];
+  const folderNotices = folder === "Sent"
+    ? sentNotices
+    : visibleNotices.filter((notice) => notice.payload?.senderId !== currentUserId);
 
   async function handleFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -2493,7 +2552,13 @@ function NoticesPage({ role, notifications, properties, onSendNotice }: { role: 
   return (
     <article className="panel notices-panel">
       <div className="panel-heading"><div><span>Read notices</span><h3>Management notices</h3></div><Megaphone /></div>
-      {role !== "Tenant" && onSendNotice ? (
+      {showSentFolder && role !== "Tenant" && (
+        <div className="notice-folder-tabs" role="tablist" aria-label="Notice folders">
+          <button type="button" role="tab" aria-selected={folder === "Inbox"} className={folder === "Inbox" ? "selected" : ""} onClick={() => setFolder("Inbox")}>Inbox <span>{visibleNotices.length - sentNotices.length}</span></button>
+          <button type="button" role="tab" aria-selected={folder === "Sent"} className={folder === "Sent" ? "selected" : ""} onClick={() => setFolder("Sent")}>Sent <span>{sentNotices.length}</span></button>
+        </div>
+      )}
+      {role !== "Tenant" && onSendNotice && (!showSentFolder || folder === "Inbox") ? (
         <div className="panel form-panel">
           <label>Title<input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Short headline" /></label>
           <label>Message<textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={3} placeholder="Write the notice body" /></label>
@@ -2514,7 +2579,7 @@ function NoticesPage({ role, notifications, properties, onSendNotice }: { role: 
         </div>
       ) : null}
       <div className="notice-list">
-        {visibleNotices.length > 0 ? visibleNotices.map((notice) => (
+        {folderNotices.length > 0 ? folderNotices.map((notice) => (
           <div key={notice.id} style={{ background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: "8px", padding: "16px", marginBottom: "12px", transition: "all 0.2s" }} onMouseEnter={(e) => { e.currentTarget.style.background = "#f3f4f6"; e.currentTarget.style.boxShadow = "0 1px 3px rgba(0,0,0,0.1)"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "#f9fafb"; e.currentTarget.style.boxShadow = "none"; }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
               <span style={{ display: "inline-block", background: notice.channel === "push" ? "#dbeafe" : notice.channel === "email" ? "#f3e8ff" : "#fef3c7", color: notice.channel === "push" ? "#0c4a6e" : notice.channel === "email" ? "#5b21b6" : "#92400e", padding: "4px 8px", borderRadius: "4px", fontSize: "11px", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.5px" }}>{notice.channel}</span>
@@ -2525,7 +2590,7 @@ function NoticesPage({ role, notifications, properties, onSendNotice }: { role: 
             {notice.payload?.attachment ? <div className="notice-attachment"><a href={String(notice.payload.attachment)} target="_blank" rel="noreferrer" style={{ display: "inline-block", padding: "6px 12px", background: "#3b82f6", color: "white", borderRadius: "4px", fontSize: "12px", textDecoration: "none", fontWeight: "500" }}>Open memo</a></div> : null}
           </div>
         )) : (
-          <div className="notice-empty"><p style={{ color: "#6b7280", fontSize: "14px", textAlign: "center", padding: "30px 20px" }}>No push alerts or operational notices are available. Check back later for updates.</p></div>
+          <div className="notice-empty"><p style={{ color: "#6b7280", fontSize: "14px", textAlign: "center", padding: "30px 20px" }}>{folder === "Sent" ? "No sent notices yet." : "No push alerts or operational notices are available. Check back later for updates."}</p></div>
         )}
       </div>
     </article>
@@ -3035,10 +3100,10 @@ function TabContent({
   }
   if (activeTab === "Overview") return <OverviewPage role={role} onNavigate={onNavigate} currency={currency} onSendPushAlert={onSendPushAlert} properties={properties} units={units} visitorRecords={visitorRecords} onSaveVisitorRecord={onSaveVisitorRecord} onUpdateVisitorRecord={onUpdateVisitorRecord} />;
   if (activeTab === "Properties") return <PropertiesPage role={role} currency={currency} properties={properties} units={units} tenants={tenants} expenses={expenses} onCreateListing={onCreateListing} onCreateUnit={onCreateUnit} onCreateTenant={onCreateTenant} onUpdateUnit={onUpdateUnit} onRecordExpense={onRecordExpense} onUploadAgreementTemplate={onUploadAgreementTemplate} onGenerateLeaseDocuments={onGenerateLeaseDocuments} />;
-  if (activeTab === "Payments") return <PaymentsPage role={role} currency={currency} payments={payments} onMakePayment={onMakePayment} onApprovePayment={onApprovePayment} />;
+  if (activeTab === "Payments") return <PaymentsPage role={role} currency={currency} payments={payments} properties={properties} units={units} tenants={tenants} currentUser={currentUser} onMakePayment={onMakePayment} onApprovePayment={onApprovePayment} />;
   if (activeTab === "Maintenance") return <MaintenancePage role={role} maintenanceData={maintenanceData} onSubmitMaintenance={onSubmitMaintenance} onUpdateMaintenance={onUpdateMaintenance} />;
-  if (activeTab === "Messaging") return <section className="messaging-grid"><MessagingCenter role={role} threads={threads} messages={messages} notifications={notifications} onLoadThread={onLoadThread} onSendMessage={onSendMessage} /><NoticesPage role={role} notifications={notifications} properties={properties} onSendNotice={onSendNotice} /></section>;
-  if (activeTab === "Notices") return <NoticesPage role={role} notifications={notifications} properties={properties} onSendNotice={onSendNotice} />;
+  if (activeTab === "Messaging") return <section className="messaging-grid"><MessagingCenter role={role} threads={threads} messages={messages} notifications={notifications} onLoadThread={onLoadThread} onSendMessage={onSendMessage} /><NoticesPage role={role} notifications={notifications} properties={properties} onSendNotice={onSendNotice} currentUserId={currentUser?.id} /></section>;
+  if (activeTab === "Notices") return <NoticesPage role={role} notifications={notifications} properties={properties} onSendNotice={onSendNotice} currentUserId={currentUser?.id} showSentFolder />;
   if (activeTab === "Visitors") return <VisitorsPage records={visitorRecords} onCheckIn={onCheckInVisitor} onCheckOut={onCheckOutVisitor} />;
   if (activeTab === "Lease") return role === "Tenant"
     ? <TenantLeasePage leases={leaseRecords.filter((lease) => lease.tenantId === currentUser?.id)} accessToken={accessToken} />
