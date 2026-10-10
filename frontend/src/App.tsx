@@ -2549,8 +2549,11 @@ function NoticesPage({ role, notifications, properties, onSendNotice, currentUse
           {status && <p className="status-note">{status}</p>}
         </div>
       ) : null}
-      <div className="notice-folder">
-        <div className="notice-folder-heading"><strong>{folder} folder</strong><span>{folderNotices.length} notice{folderNotices.length === 1 ? "" : "s"}</span></div>
+      <details className="notice-folder" key={folder}>
+        <summary className="notice-folder-heading">
+          <strong>{folder} folder</strong>
+          <span>{folderNotices.length} notice{folderNotices.length === 1 ? "" : "s"}</span>
+        </summary>
         <div className="notice-list">
           {folderNotices.length > 0 ? folderNotices.map((notice) => (
             <div key={notice.id} className="notice-entry">
@@ -2566,7 +2569,7 @@ function NoticesPage({ role, notifications, properties, onSendNotice, currentUse
             <div className="notice-empty"><p>{folder === "Sent" ? "No sent notices yet." : "No push alerts or operational notices are available. Check back later for updates."}</p></div>
           )}
         </div>
-      </div>
+      </details>
     </article>
   );
 }
