@@ -3215,18 +3215,14 @@ function LandingPage({ onSelectMode }: { onSelectMode: (mode: "login" | "signup"
         </div>
         <h1>Welcome to RentFlow</h1>
         <div className="auth-choice-grid">
-          <article className="choice-card">
-            <div className="choice-icon"><Lock /></div>
-            <h2>Sign in</h2>
-            <p>Already have an account?</p>
-            <button className="primary-action" onClick={() => onSelectMode("login")}>Sign in</button>
-          </article>
-          <article className="choice-card highlighted">
-            <div className="choice-icon"><User /></div>
-            <h2>Sign up</h2>
-            <p>New Tenant</p>
-            <button className="primary-action" onClick={() => onSelectMode("signup")}>Sign up</button>
-          </article>
+          <button className="choice-card" type="button" onClick={() => onSelectMode("login")}>
+            <span className="choice-icon"><Lock /></span>
+            <span className="choice-copy"><strong>Sign in</strong><small>Already have an account?</small></span>
+          </button>
+          <button className="choice-card highlighted" type="button" onClick={() => onSelectMode("signup")}>
+            <span className="choice-icon"><User /></span>
+            <span className="choice-copy"><strong>Sign up</strong><small>New tenant</small></span>
+          </button>
         </div>
       </section>
     </main>
