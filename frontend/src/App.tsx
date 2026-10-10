@@ -1155,9 +1155,32 @@ function OverviewPage({
   );
 }
 
-function TenantLeasePage({ leases }: { leases: ServerLeaseRecord[] }) {
+function TenantLeasePage({ leases, accessToken }: { leases: ServerLeaseRecord[]; accessToken: string | null }) {
   const [selectedLeaseId, setSelectedLeaseId] = useState(leases[0]?.id ?? "");
+  const [downloadStatus, setDownloadStatus] = useState("");
+  const [downloading, setDownloading] = useState(false);
   const selectedLease = leases.find((lease) => lease.id === selectedLeaseId) ?? leases[0];
+
+  async function downloadCurrentLease() {
+    if (!selectedLease || !accessToken) return;
+    setDownloading(true);
+    setDownloadStatus("");
+    try {
+      const result = await fetchJson<{ data: ServerLeaseRecord[] }>("/api/leases", {
+        headers: getAuthHeaders(accessToken)
+      });
+      const currentLease = result.data.find((lease) => lease.id === selectedLease.id);
+      if (!currentLease?.renderedText) {
+        throw new Error("A completed lease template is not available for this property yet.");
+      }
+      downloadFile(currentLease.fileName ?? "lease-agreement.txt", currentLease.renderedText);
+      setDownloadStatus("Your lease was refreshed with your current tenant and lease details.");
+    } catch (error) {
+      setDownloadStatus(error instanceof Error ? error.message : "Could not prepare your lease download.");
+    } finally {
+      setDownloading(false);
+    }
+  }
 
   return (
     <section className="content-grid">
@@ -1174,12 +1197,10 @@ function TenantLeasePage({ leases }: { leases: ServerLeaseRecord[] }) {
               <div><span>Deposit</span><strong>{selectedLease?.depositAmount == null ? "Not recorded" : formatMoney(selectedLease.depositAmount, "KES")}</strong></div>
               <div><span>Signature status</span><strong>{selectedLease?.digitalSignatureStatus}</strong></div>
             </div>
-            {selectedLease?.templateAvailable && selectedLease.renderedText ? (
-              <>
-                <pre className="lease-document-preview">{selectedLease.renderedText}</pre>
-                <button type="button" className="primary-action" onClick={() => downloadFile(selectedLease.fileName ?? "lease-agreement.txt", selectedLease.renderedText ?? "")}>Download lease</button>
-              </>
-            ) : <p className="muted-copy">Management has not uploaded a lease template for this property yet.</p>}
+            {selectedLease?.templateAvailable && selectedLease.renderedText && <pre className="lease-document-preview">{selectedLease.renderedText}</pre>}
+            {selectedLease && <button type="button" className="primary-action" disabled={downloading} onClick={downloadCurrentLease}>{downloading ? "Preparing lease..." : "Download lease"}</button>}
+            {downloadStatus && <p className={`status-note${downloadStatus.startsWith("Your lease was refreshed") ? "" : " error"}`} role={downloadStatus.startsWith("Your lease was refreshed") ? "status" : "alert"}>{downloadStatus}</p>}
+            {selectedLease && !selectedLease.templateAvailable && <p className="muted-copy">Management has not uploaded a lease template for this property yet.</p>}
           </>
         )}
       </article>
@@ -3020,7 +3041,7 @@ function TabContent({
   if (activeTab === "Notices") return <NoticesPage role={role} notifications={notifications} properties={properties} onSendNotice={onSendNotice} />;
   if (activeTab === "Visitors") return <VisitorsPage records={visitorRecords} onCheckIn={onCheckInVisitor} onCheckOut={onCheckOutVisitor} />;
   if (activeTab === "Lease") return role === "Tenant"
-    ? <TenantLeasePage leases={leaseRecords.filter((lease) => lease.tenantId === currentUser?.id)} />
+    ? <TenantLeasePage leases={leaseRecords.filter((lease) => lease.tenantId === currentUser?.id)} accessToken={accessToken} />
     : <ManagementLeasePage properties={properties} units={units} tenants={tenants} leases={leaseRecords} onUploadTemplate={onUploadAgreementTemplate} onGenerateLeases={onGenerateLeaseDocuments} onCreateLease={onCreateLease} />;
   if (activeTab === "Reports") return <ReportsPage role={role} currency={currency} />;
   if (activeTab === "Security") return <SecurityPage role={role} securityRecords={securityRecords} onAddSecurityRecord={onAddSecurityRecord} />;
