@@ -56,8 +56,6 @@ import {
   listPayments,
   listPaymentAccounts,
   listSecurityRecords,
-  listSecurityEvents,
-  createSecurityEvent,
   createSecurityRecord,
   listProperties,
   listThreadMessages,
@@ -534,36 +532,6 @@ app.get("/api/security", authenticate, async (req, res) => {
     res.json({ data });
   } catch (error) {
     res.json({ data: [], error: error instanceof Error ? error.message : "Failed to load security records" });
-  }
-});
-
-app.get("/api/security/events", authenticate, requireRoles("caretaker", "owner", "super_admin"), async (req, res) => {
-  try {
-    res.json({ data: await listSecurityEvents(req.user!), storage: "postgres" });
-  } catch (error) {
-    res.status(503).json({ error: error instanceof Error ? error.message : "Could not load security events." });
-  }
-});
-
-app.post("/api/security/events", authenticate, requireRoles("caretaker", "owner", "super_admin"), async (req, res) => {
-  const eventType = String(req.body.eventType ?? "").trim();
-  const title = String(req.body.title ?? "").trim();
-  const details = String(req.body.details ?? "").trim();
-  if (!eventType || !title || !details) return res.status(400).json({ error: "eventType, title, and details are required." });
-  try {
-    const event = await createSecurityEvent(req.user!, {
-      propertyId: req.body.propertyId ? String(req.body.propertyId) : undefined,
-      eventType,
-      title,
-      details,
-      location: req.body.location ? String(req.body.location) : undefined,
-      latitude: req.body.latitude === "" || req.body.latitude == null ? undefined : Number(req.body.latitude),
-      longitude: req.body.longitude === "" || req.body.longitude == null ? undefined : Number(req.body.longitude)
-    });
-    await createAuditLog(req.user!.id, "CREATE_SECURITY_EVENT", "security_event", String(event.id), { eventType }).catch(() => undefined);
-    res.status(201).json({ data: event, storage: "postgres" });
-  } catch (error) {
-    res.status(503).json({ error: error instanceof Error ? error.message : "Could not save security event." });
   }
 });
 
@@ -1096,10 +1064,18 @@ app.get("/api/maintenance", authenticate, async (req, res) => {
 });
 
 app.post("/api/maintenance", authenticate, async (req, res) => {
+  const assignedUnit = req.user!.role === "tenant"
+    ? (await listUnits()).find((unit) => unit.tenantId === req.user!.id)
+    : undefined;
+  const propertyId = assignedUnit?.propertyId ?? req.body.propertyId;
+  const unitId = assignedUnit?.id ?? req.body.unitId;
+  if (!propertyId || !unitId) {
+    return res.status(400).json({ error: "A property unit must be assigned before submitting a maintenance request." });
+  }
+
   const ticket = {
-    id: `mnt_${Date.now()}`,
-    propertyId: req.body.propertyId,
-    unitId: req.body.unitId,
+    propertyId: String(propertyId),
+    unitId: String(unitId),
     tenantId: req.user!.id,
     title: req.body.title,
     description: String(req.body.description ?? ""),
@@ -1107,11 +1083,14 @@ app.post("/api/maintenance", authenticate, async (req, res) => {
     status: "submitted" as const,
     mediaUrls: req.body.mediaUrls ?? []
   };
-  const dbTicket = await createMaintenanceTicket(ticket).catch(() => null);
-  const createdTicket = dbTicket ?? ticket;
-  if (!dbTicket) maintenanceTickets.push(ticket);
-  broadcastRealtime({ type: "maintenance.ticket.created", ticket: createdTicket });
-  res.status(201).json({ data: createdTicket, storage: dbTicket ? "postgres" : "memory-fallback", escalation: ticket.priority === "emergency" ? "caretaker-and-owner-alerted" : "standard-queue" });
+  try {
+    const createdTicket = await createMaintenanceTicket(ticket);
+    broadcastRealtime({ type: "maintenance.ticket.created", ticket: createdTicket });
+    res.status(201).json({ data: createdTicket, storage: "postgres", escalation: ticket.priority === "emergency" ? "caretaker-and-owner-alerted" : "standard-queue" });
+  } catch (error) {
+    console.error("Failed to save maintenance request:", error);
+    res.status(500).json({ error: "Maintenance request could not be saved. Please try again." });
+  }
 });
 
 app.put("/api/maintenance/:ticketId", authenticate, requireRoles("caretaker", "owner", "super_admin", "worker"), async (req, res) => {

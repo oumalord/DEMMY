@@ -38,6 +38,25 @@ API docs: `http://localhost:4000/docs`
 
 AI service: `http://localhost:7000/docs`
 
+## Install RentFlow
+
+### Web app
+
+Deploy the frontend over HTTPS, then open it in Chrome or Edge and choose **Install RentFlow** from the browser menu. The PWA caches the app shell; API requests remain online-only.
+
+### Android app
+
+Install Android Studio with JDK 17 and the Android SDK. Set `VITE_API_URL` to the base URL of your deployed API (without a trailing slash), then build and sync the web assets:
+
+```powershell
+cd frontend
+$env:VITE_API_URL = "https://your-api.example.com"
+npm run android:sync
+npm run android:open
+```
+
+In Android Studio, open the `frontend/android` project and use **Build > Build Bundle(s) / APK(s) > Build APK(s)**. The API URL is embedded at build time; do not use `localhost` for a device installation.
+
 
 ## Production Notes
 

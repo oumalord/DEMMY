@@ -1433,57 +1433,6 @@ svg {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-.security-operation-grid {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.security-operation-grid button {
-  min-height: 44px;
-  padding: 8px 10px;
-  border: 1px solid rgba(148, 163, 184, .2);
-  border-radius: 8px;
-  color: #cbd5e1;
-  background: rgba(148, 163, 184, .1);
-}
-
-.security-operation-grid button.selected {
-  color: #06111f;
-  background: linear-gradient(135deg, #38bdf8, #22c55e);
-}
-
-.security-coordinate-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.security-event-list {
-  display: grid;
-  gap: 8px;
-  margin-top: 8px;
-}
-
-.security-event-row {
-  padding: 12px;
-  border: 1px solid rgba(148, 163, 184, .16);
-  border-radius: 8px;
-  background: rgba(148, 163, 184, .08);
-}
-
-.security-event-row span,
-.security-event-row p {
-  display: block;
-  margin: 4px 0 0;
-  color: #94a3b8;
-  font-size: .86rem;
-}
-
-.security-event-row p {
-  line-height: 1.45;
-}
-
 .report-grid button,
 .admin-actions button {
   display: flex;
@@ -2070,11 +2019,11 @@ svg {
   }
 
   .hero-band {
-    grid-template-columns: minmax(210px, .8fr) minmax(0, 1.2fr);
+    grid-template-columns: 1fr;
   }
 
   .messaging-panel {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(210px, .8fr) minmax(0, 1.2fr);
   }
 
   .dashboard-snapshot,
@@ -2415,6 +2364,57 @@ svg {
   }
 
   .payment-mode-grid,
+  .receipt-row {
+    grid-template-columns: 1fr;
+  }
+
+  .chat-context {
+    display: none;
+  }
+
+  .mobile-bottom-nav {
+    position: fixed;
+    left: 50%;
+    bottom: 18px;
+    z-index: 20;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 8px;
+    max-width: calc(100vw - 28px);
+    overflow-x: auto;
+    padding: 8px;
+    border-radius: 24px;
+    background: rgba(5, 13, 24, .82);
+    border: 1px solid rgba(255, 255, 255, .16);
+    box-shadow: 0 22px 54px rgba(0, 0, 0, .38);
+    backdrop-filter: blur(22px);
+    scrollbar-width: none;
+  }
+
+  .mobile-bottom-nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .mobile-bottom-nav button {
+    flex: 0 0 58px;
+    width: 58px;
+    height: 56px;
+    display: grid;
+    place-items: center;
+    border-radius: 18px;
+    color: #c7d2fe;
+    background: transparent;
+  }
+
+  .mobile-bottom-nav button.selected {
+    color: #06111f;
+    background: linear-gradient(135deg, #e0f2fe, #bfdbfe);
+  }
+
+  .mobile-bottom-nav button:disabled {
+    opacity: .28;
+  }
+}
 
 :root {
   color-scheme: light;
@@ -3366,56 +3366,5 @@ body {
     min-height: 36px;
     padding: 0 11px;
     font-size: .76rem;
-  }
-}
-  .receipt-row {
-    grid-template-columns: 1fr;
-  }
-
-  .chat-context {
-    display: none;
-  }
-
-  .mobile-bottom-nav {
-    position: fixed;
-    left: 50%;
-    bottom: 18px;
-    z-index: 20;
-    transform: translateX(-50%);
-    display: flex;
-    gap: 8px;
-    max-width: calc(100vw - 28px);
-    overflow-x: auto;
-    padding: 8px;
-    border-radius: 24px;
-    background: rgba(5, 13, 24, .82);
-    border: 1px solid rgba(255, 255, 255, .16);
-    box-shadow: 0 22px 54px rgba(0, 0, 0, .38);
-    backdrop-filter: blur(22px);
-    scrollbar-width: none;
-  }
-
-  .mobile-bottom-nav::-webkit-scrollbar {
-    display: none;
-  }
-
-  .mobile-bottom-nav button {
-    flex: 0 0 58px;
-    width: 58px;
-    height: 56px;
-    display: grid;
-    place-items: center;
-    border-radius: 18px;
-    color: #c7d2fe;
-    background: transparent;
-  }
-
-  .mobile-bottom-nav button.selected {
-    color: #06111f;
-    background: linear-gradient(135deg, #e0f2fe, #bfdbfe);
-  }
-
-  .mobile-bottom-nav button:disabled {
-    opacity: .28;
   }
 }

@@ -63,7 +63,7 @@ import {
   YAxis
 } from "recharts";
 
-const apiBaseUrl = import.meta.env.DEV ? "http://localhost:4000" : "";
+const apiBaseUrl = (import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? "http://localhost:4000" : "")).replace(/\/+$/, "");
 
 type UserRole = "tenant" | "caretaker" | "owner" | "super_admin";
 
@@ -220,19 +220,6 @@ interface ServerSecurityRecord {
   notes: string;
   instructions: string;
   location?: string;
-  createdAt: string;
-}
-
-interface ServerSecurityEvent {
-  id: string;
-  propertyId?: string;
-  eventType: string;
-  title: string;
-  details: string;
-  location?: string;
-  latitude?: number;
-  longitude?: number;
-  status: string;
   createdAt: string;
 }
 
@@ -1379,7 +1366,6 @@ function PropertiesPage({
   onGenerateLeaseDocuments
 }: {
   role: Role;
-  const [propertySection, setPropertySection] = useState<"Portfolio" | "Listings" | "Tenants & units" | "Expenses">("Portfolio");
   currency: Currency;
   properties: ServerProperty[];
   units: ServerUnit[];
@@ -1393,6 +1379,7 @@ function PropertiesPage({
   onUploadAgreementTemplate: (payload: Record<string, unknown>) => Promise<unknown>;
   onGenerateLeaseDocuments: (payload: { propertyId: string; unitIds?: string[] }) => Promise<Array<{ unitId: string; tenantId?: string; tenantName: string; renderedText: string; fileName: string }>>;
 }) {
+  const [propertySection, setPropertySection] = useState<"Portfolio" | "Listings" | "Tenants & units" | "Expenses">("Portfolio");
   const [listingForm, setListingForm] = useState({
     name: "",
     address: "",
@@ -1584,7 +1571,6 @@ function PropertiesPage({
           floor: unit.floor || undefined,
           number: unit.number || undefined,
           rent: Number(unit.rent),
-      setPropertySection("Tenants & units");
           deposit: Number(unit.deposit || 0),
           leaseMonths: Number(unit.leaseMonths || 12),
           status: unit.status
@@ -1598,13 +1584,7 @@ function PropertiesPage({
       });
       setUnitsForm([{ block: "", floor: "", number: "", rent: "", deposit: "", leaseMonths: "", status: "vacant" }]);
       setManagingPropertyId(property.id);
-        {role !== "Tenant" && (
-          <nav className="property-tabs" aria-label="Property sections" role="tablist">
-            {(["Portfolio", "Listings", "Tenants & units", "Expenses"] as const).map((section) => (
-              <button key={section} type="button" role="tab" aria-selected={propertySection === section} className={propertySection === section ? "selected" : ""} onClick={() => setPropertySection(section)}>{section}</button>
-            ))}
-          </nav>
-        )}
+      setPropertySection("Tenants & units");
       setUnitsManagementStatus(`✓ Property created! Now add units to ${property.name} using the form below.`);
     } catch (error) {
       setListingStatus(error instanceof Error ? error.message : "Create listing failed.");
@@ -1618,6 +1598,13 @@ function PropertiesPage({
           <div><span>{role === "Tenant" ? "My occupancy" : "Property operations"}</span><h3>{role === "Tenant" ? "Unit overview" : "Properties"}</h3></div>
           {role !== "Tenant" && <button onClick={() => { setPropertySection("Listings"); setListingStatus("Start a new property listing below."); }}>Add listing</button>}
         </div>
+        {role !== "Tenant" && (
+          <nav className="property-tabs" aria-label="Property sections" role="tablist">
+            {(["Portfolio", "Listings", "Tenants & units", "Expenses"] as const).map((section) => (
+              <button key={section} type="button" role="tab" aria-selected={propertySection === section} className={propertySection === section ? "selected" : ""} onClick={() => setPropertySection(section)}>{section}</button>
+            ))}
+          </nav>
+        )}
         {role === "Tenant" ? (
           <div className="tenant-selection-panel">
             <div className="selection-row">
@@ -1720,9 +1707,7 @@ function PropertiesPage({
               </div>
               <div className="form-grid">
                 <label>Full name<input value={tenantForm.name} onChange={(event) => setTenantForm({ ...tenantForm, name: event.target.value })} /></label>
-            )}
                 <label>Email address<input value={tenantForm.email} onChange={(event) => setTenantForm({ ...tenantForm, email: event.target.value })} /></label>
-            {propertySection === "Expenses" && (
                 <label>Phone number<input value={tenantForm.phone} onChange={(event) => setTenantForm({ ...tenantForm, phone: event.target.value })} /></label>
               </div>
               {tenantForm.propertyId && units.find((u) => u.id === tenantForm.unitId)?.block && (
@@ -1735,7 +1720,9 @@ function PropertiesPage({
               <button className="primary-action" onClick={onboardTenant}>Add tenant & assign unit</button>
               {tenantStatus && <p className="status-note">{tenantStatus}</p>}
             </article>
+            )}
 
+            {propertySection === "Expenses" && (
             <article className="panel form-panel expense-panel">
               <div className="panel-heading"><div><span>Record expenses</span><h3>Track property spend</h3></div></div>
               <div className="form-grid">
@@ -1751,7 +1738,6 @@ function PropertiesPage({
                 <label>Description<textarea value={expenseForm.description} onChange={(event) => setExpenseForm({ ...expenseForm, description: event.target.value })} placeholder="Repair or vendor expense details." rows={3} /></label>
                 <label>Amount<input value={expenseForm.amount} onChange={(event) => setExpenseForm({ ...expenseForm, amount: event.target.value })} /></label>
                 <label>Receipt URL<input value={expenseForm.receiptUrl} onChange={(event) => setExpenseForm({ ...expenseForm, receiptUrl: event.target.value })} /></label>
-            )}
               </div>
               <button className="primary-action" onClick={recordExpenseEntry}>Record expense</button>
               {expenseStatus && <p className="status-note">{expenseStatus}</p>}
@@ -1765,6 +1751,7 @@ function PropertiesPage({
                 )) : <p className="status-note">No expenses recorded yet.</p>}
               </div>
             </article>
+            )}
           </div>
         )}
 
@@ -2625,9 +2612,8 @@ function VisitorsPage({ records, onCheckIn, onCheckOut }: {
   );
 }
 
-function SecurityPage({ role, securityRecords, securityEvents, properties, onAddSecurityRecord, onCreateSecurityEvent }: { role: Role; securityRecords: ServerSecurityRecord[]; securityEvents: ServerSecurityEvent[]; properties: ServerProperty[]; onAddSecurityRecord: (payload: { propertyName: string; companyName: string; contactName: string; contactPhone: string; contactEmail: string; notes: string; instructions: string; location?: string }) => Promise<ServerSecurityRecord | null>; onCreateSecurityEvent: (payload: { propertyId?: string; eventType: string; title: string; details: string; location?: string; latitude?: number; longitude?: number }) => Promise<ServerSecurityEvent | null> }) {
+function SecurityPage({ role, securityRecords, onAddSecurityRecord }: { role: Role; securityRecords: ServerSecurityRecord[]; onAddSecurityRecord: (payload: { propertyName: string; companyName: string; contactName: string; contactPhone: string; contactEmail: string; notes: string; instructions: string; location?: string }) => Promise<ServerSecurityRecord | null> }) {
   const [form, setForm] = useState({ propertyName: "", companyName: "", contactName: "", contactPhone: "", contactEmail: "", location: "", notes: "", instructions: "" });
-  const [eventForm, setEventForm] = useState({ eventType: "incident", propertyId: properties[0]?.id ?? "", title: "", details: "", location: "", latitude: "", longitude: "" });
   const [status, setStatus] = useState("");
   const [chatHistory, setChatHistory] = useState<Array<{ agent: string; author: string; time: string; body: string }>>([]);
   const [selectedAgent, setSelectedAgent] = useState<string>(securityRecords[0]?.contactName ?? "");
@@ -2653,24 +2639,6 @@ function SecurityPage({ role, securityRecords, securityEvents, properties, onAdd
     }
   }
 
-  async function saveSecurityEvent() {
-    if (!eventForm.title.trim() || !eventForm.details.trim()) {
-      setStatus("Enter a title and details for the security operation.");
-      return;
-    }
-    const event = await onCreateSecurityEvent({
-      propertyId: eventForm.propertyId || undefined,
-      eventType: eventForm.eventType,
-      title: eventForm.title.trim(),
-      details: eventForm.details.trim(),
-      location: eventForm.location.trim() || undefined,
-      latitude: eventForm.latitude ? Number(eventForm.latitude) : undefined,
-      longitude: eventForm.longitude ? Number(eventForm.longitude) : undefined
-    });
-    setStatus(event ? `${eventForm.eventType} record saved.` : "Could not save security operation.");
-    if (event) setEventForm({ ...eventForm, title: "", details: "", location: "", latitude: "", longitude: "" });
-  }
-
   function sendSecurityMessage() {
     if (!selectedAgent || !message.trim()) {
       setStatus("Select a security agent and type a message first.");
@@ -2691,26 +2659,6 @@ function SecurityPage({ role, securityRecords, securityEvents, properties, onAdd
           ))}
         </div>
       </article>
-      {role !== "Tenant" && <article className="panel wide-panel form-panel security-operations-panel">
-        <div className="panel-heading"><div><span>Security operations</span><h3>Log and coordinate property security</h3></div><ShieldCheck /></div>
-        <div className="security-operation-grid">
-          {[
-            ["incident", "Incident"],
-            ["mobile_patrol", "Mobile patrol tracking"],
-            ["gate_communication", "Gate communications"],
-            ["emergency_alert", "Emergency alert"],
-            ["security_audit", "Property security audit"]
-          ].map(([value, label]) => <button key={value} type="button" className={eventForm.eventType === value ? "selected" : ""} onClick={() => setEventForm({ ...eventForm, eventType: value })}>{label}</button>)}
-        </div>
-        <label>Property<select value={eventForm.propertyId} onChange={(event) => setEventForm({ ...eventForm, propertyId: event.target.value })}><option value="">All properties</option>{properties.map((property) => <option key={property.id} value={property.id}>{property.name}</option>)}</select></label>
-        <label>Title<input autoComplete="off" value={eventForm.title} onChange={(event) => setEventForm({ ...eventForm, title: event.target.value })} placeholder="Operation title" /></label>
-        <label>Details<textarea value={eventForm.details} onChange={(event) => setEventForm({ ...eventForm, details: event.target.value })} placeholder="Describe the incident, patrol, communication, alert, or audit finding." /></label>
-        <label>Location or gate point<input autoComplete="off" value={eventForm.location} onChange={(event) => setEventForm({ ...eventForm, location: event.target.value })} placeholder="Main gate" /></label>
-        {eventForm.eventType === "mobile_patrol" && <div className="security-coordinate-grid"><label>Latitude<input autoComplete="off" value={eventForm.latitude} onChange={(event) => setEventForm({ ...eventForm, latitude: event.target.value })} /></label><label>Longitude<input autoComplete="off" value={eventForm.longitude} onChange={(event) => setEventForm({ ...eventForm, longitude: event.target.value })} /></label></div>}
-        <button className="primary-action" type="button" onClick={saveSecurityEvent}>Save security operation</button>
-        {securityEvents.length > 0 && <div className="security-event-list">{securityEvents.slice(0, 8).map((event) => <div className="security-event-row" key={event.id}><strong>{event.title}</strong><span>{event.eventType.replace(/_/g, " ")} · {formatDateTime(event.createdAt)}</span><p>{event.details}</p></div>)}</div>}
-        {status && <p className="status-note">{status}</p>}
-      </article>}
       {role === "Tenant" ? (
         <article className="panel form-panel">
           <div className="panel-heading"><div><span>Contact security</span><h3>Message gate staff</h3></div></div>
@@ -3017,8 +2965,6 @@ function TabContent({
   onCheckInVisitor,
   onCheckOutVisitor,
   onCreateLease,
-  securityEvents,
-  onCreateSecurityEvent,
   leaseRecords,
   accessToken
 }: {
@@ -3060,8 +3006,6 @@ function TabContent({
   onCheckInVisitor: (id: string) => Promise<VisitorPassRecord | null>;
   onCheckOutVisitor: (id: string) => Promise<VisitorPassRecord | null>;
   onCreateLease: (payload: { unitId: string; tenantId: string; startDate: string; endDate: string }) => Promise<ServerLeaseRecord>;
-  securityEvents: ServerSecurityEvent[];
-  onCreateSecurityEvent: (payload: { propertyId?: string; eventType: string; title: string; details: string; location?: string; latitude?: number; longitude?: number }) => Promise<ServerSecurityEvent | null>;
   leaseRecords: ServerLeaseRecord[];
   accessToken: string | null;
 }) {
@@ -3079,7 +3023,7 @@ function TabContent({
     ? <TenantLeasePage leases={leaseRecords.filter((lease) => lease.tenantId === currentUser?.id)} />
     : <ManagementLeasePage properties={properties} units={units} tenants={tenants} leases={leaseRecords} onUploadTemplate={onUploadAgreementTemplate} onGenerateLeases={onGenerateLeaseDocuments} onCreateLease={onCreateLease} />;
   if (activeTab === "Reports") return <ReportsPage role={role} currency={currency} />;
-  if (activeTab === "Security") return <SecurityPage role={role} securityRecords={securityRecords} securityEvents={securityEvents} properties={properties} onAddSecurityRecord={onAddSecurityRecord} onCreateSecurityEvent={onCreateSecurityEvent} />;
+  if (activeTab === "Security") return <SecurityPage role={role} securityRecords={securityRecords} onAddSecurityRecord={onAddSecurityRecord} />;
   if (activeTab === "Profile") return <ProfilePage role={role} />;
   if (activeTab === "Sign Out") return <SignOutPage onSignOut={onSignOut} />;
   return <AdminPage role={role} properties={properties} accessToken={accessToken} />;
@@ -3158,15 +3102,10 @@ function PasswordChangeForm({ onSubmit, error }: { onSubmit: (payload: { current
         <input autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} type="password" placeholder="New password" />
       </label>
       <label>
-  const [loginFieldsActive, setLoginFieldsActive] = useState(false);
         Confirm password
         <input autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} type="password" placeholder="Confirm new password" />
       </label>
       {status && <p className="status-note error">{status}</p>}
-  useEffect(() => {
-    setLoginFieldsActive(false);
-  }, [mode]);
-
       {error && <p className="status-note error">{error}</p>}
       <button className="primary-cta" onClick={submit} disabled={loading}>{loading ? "Updating..." : "Update password"}</button>
     </>
@@ -3219,9 +3158,14 @@ function AuthPage({ mode, onMode, onLogin, onSignup, onLegal, error, loading }: 
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
+  const [loginFieldsActive, setLoginFieldsActive] = useState(false);
   const [apartment, setApartment] = useState("");
   const [houseNumber, setHouseNumber] = useState("");
   const [status, setStatus] = useState("");
+
+  useEffect(() => {
+    setLoginFieldsActive(false);
+  }, [mode]);
 
   function handleProviderAuth(provider: "Google" | "Facebook" | "Apple") {
     window.location.assign(`${apiBaseUrl}/api/auth/oauth/${provider.toLowerCase()}`);
@@ -3344,7 +3288,6 @@ function AppShell() {
   const [securityRecords, setSecurityRecords] = useState<ServerSecurityRecord[]>([]);
   const [visitorRecords, setVisitorRecords] = useState<VisitorPassRecord[]>([]);
   const [leaseRecords, setLeaseRecords] = useState<ServerLeaseRecord[]>([]);
-  const [securityEvents, setSecurityEvents] = useState<ServerSecurityEvent[]>([]);
   const [securityChatMessages, setSecurityChatMessages] = useState<Array<{ id: string; agent: string; author: string; time: string; body: string }>>([]);
   const [wsConnected, setWsConnected] = useState(false);
   const [authError, setAuthError] = useState("");
@@ -3390,16 +3333,6 @@ function AppShell() {
       wsRef.current = null;
     };
   }, [accessToken]);
-
-  useEffect(() => {
-    if (!accessToken || role === "Tenant") {
-      setSecurityEvents([]);
-      return;
-    }
-    fetchJson<{ data: ServerSecurityEvent[] }>("/api/security/events", { headers: getAuthHeaders(accessToken) })
-      .then((result) => setSecurityEvents(result.data))
-      .catch((error) => console.error("Failed to load security events:", error));
-  }, [accessToken, role]);
 
   useEffect(() => {
     if (!accessToken) return;
@@ -3702,17 +3635,6 @@ function AppShell() {
     return result.data;
   }
 
-  async function createSecurityEvent(payload: { propertyId?: string; eventType: string; title: string; details: string; location?: string; latitude?: number; longitude?: number }) {
-    if (!accessToken) return null;
-    const result = await fetchJson<{ data: ServerSecurityEvent }>("/api/security/events", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...getAuthHeaders(accessToken) },
-      body: JSON.stringify(payload)
-    });
-    setSecurityEvents((current) => [result.data, ...current]);
-    return result.data;
-  }
-
   async function approvePayment(payload: { paymentId: string; status?: string }) {
     if (!accessToken) return null;
     try {
@@ -3878,7 +3800,6 @@ function AppShell() {
     setSecurityRecords([]);
     setMaintenanceData([]);
     setLeaseRecords([]);
-    setSecurityEvents([]);
   }
 
   function switchRole(nextRole: Role) {
@@ -4027,8 +3948,6 @@ function AppShell() {
           onCheckInVisitor={checkInVisitor}
           onCheckOutVisitor={checkOutVisitor}
           onCreateLease={createLease}
-          securityEvents={securityEvents}
-          onCreateSecurityEvent={createSecurityEvent}
           leaseRecords={leaseRecords}
           accessToken={accessToken}
         />
