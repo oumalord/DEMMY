@@ -3263,6 +3263,133 @@ body {
   background: rgba(255, 255, 255, .2);
 }
 
+.notice-folder {
+  overflow: hidden;
+  border: 1px solid var(--rentflow-line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.notice-folder-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 46px;
+  padding: 0 15px;
+  border-bottom: 1px solid var(--rentflow-line);
+  color: #111;
+  background: #f7faf8;
+  font-size: .84rem;
+}
+
+.notice-folder-heading > span {
+  color: #505957;
+  font-size: .75rem;
+  font-weight: 600;
+}
+
+.notice-list {
+  display: block;
+  max-height: min(55svh, 520px);
+  margin: 0;
+  overflow-y: auto;
+  background: #fff;
+}
+
+.notice-list .notice-entry {
+  display: block;
+  margin: 0;
+  padding: 13px 15px;
+  border: 0;
+  border-bottom: 1px solid #e8eeeb;
+  border-radius: 0;
+  color: #111;
+  background: #fff;
+}
+
+.notice-list .notice-entry:last-child {
+  border-bottom: 0;
+}
+
+.notice-entry-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 7px;
+}
+
+.notice-entry-meta small {
+  color: #535d59;
+  font-size: .7rem;
+}
+
+.notice-channel {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  color: #164e63;
+  background: #e0f2f1;
+  font-size: .65rem;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.notice-channel-email {
+  color: #513b73;
+  background: #f0eafa;
+}
+
+.notice-channel-sms {
+  color: #70420b;
+  background: #fbf0d7;
+}
+
+.notice-channel-push {
+  color: #164e63;
+  background: #e0f2f1;
+}
+
+.notice-entry-title {
+  display: block;
+  margin-bottom: 4px;
+  color: #111;
+  font-size: .86rem;
+  font-weight: 750;
+}
+
+.notice-list .notice-entry-body {
+  margin: 0;
+  color: #343b39;
+  font-size: .8rem;
+  line-height: 1.45;
+}
+
+.notice-attachment a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  margin-top: 9px;
+  padding: 0 10px;
+  border-radius: 5px;
+  color: #fff;
+  background: var(--rentflow-green-dark);
+  font-size: .74rem;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.notice-list .notice-empty p {
+  margin: 0;
+  padding: 34px 20px;
+  color: #414141;
+  text-align: center;
+  font-size: .82rem;
+}
+
 .topbar-controls {
   display: flex;
   align-items: center;

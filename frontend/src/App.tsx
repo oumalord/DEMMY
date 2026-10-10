@@ -829,34 +829,6 @@ function PrivilegePanel({ role }: { role: Role }) {
   );
 }
 
-function DashboardShortcuts({ role, onNavigate }: { role: Role; onNavigate: (tab: Tab) => void }) {
-  const shortcuts = roleTabs[role].filter((tab) => tab !== "Overview" && tab !== "Security");
-
-  return (
-    <section className="shortcut-grid">
-      {shortcuts.map((tab) => {
-        const Icon = tabIcons[tab];
-        return (
-          <button key={tab} onClick={() => onNavigate(tab)}>
-            <Icon />
-            <span>
-              <strong>{tab}</strong>
-              <small>
-                {tab === "Admin"
-                  ? "Controls and access"
-                  : tab === "Messaging"
-                    ? "Groups and notices"
-                    : tab === "Payments"
-                      ? role === "Tenant" ? "Pay and receipts" : "Collections"
-                      : "Open page"}
-              </small>
-            </span>
-          </button>
-        );
-      })}
-    </section>
-  );
-}
 
 function DashboardSnapshot({ role }: { role: Role }) {
   const isTenant = role === "Tenant";
@@ -1148,7 +1120,6 @@ function OverviewPage({
             {stats.slice(0, 2).map((stat) => <StatCard key={stat.label} {...stat} currency={currency} />)}
           </section>
           <DashboardSnapshot role={role} />
-          <DashboardShortcuts role={role} onNavigate={onNavigate} />
         </>
       )}
     </>
@@ -2578,20 +2549,23 @@ function NoticesPage({ role, notifications, properties, onSendNotice, currentUse
           {status && <p className="status-note">{status}</p>}
         </div>
       ) : null}
-      <div className="notice-list">
-        {folderNotices.length > 0 ? folderNotices.map((notice) => (
-          <div key={notice.id} style={{ background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: "8px", padding: "16px", marginBottom: "12px", transition: "all 0.2s" }} onMouseEnter={(e) => { e.currentTarget.style.background = "#f3f4f6"; e.currentTarget.style.boxShadow = "0 1px 3px rgba(0,0,0,0.1)"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "#f9fafb"; e.currentTarget.style.boxShadow = "none"; }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
-              <span style={{ display: "inline-block", background: notice.channel === "push" ? "#dbeafe" : notice.channel === "email" ? "#f3e8ff" : "#fef3c7", color: notice.channel === "push" ? "#0c4a6e" : notice.channel === "email" ? "#5b21b6" : "#92400e", padding: "4px 8px", borderRadius: "4px", fontSize: "11px", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.5px" }}>{notice.channel}</span>
-              {notice.createdAt && <small style={{ color: "#6b7280", fontSize: "12px" }}>{formatDateTime(notice.createdAt)}</small>}
+      <div className="notice-folder">
+        <div className="notice-folder-heading"><strong>{folder} folder</strong><span>{folderNotices.length} notice{folderNotices.length === 1 ? "" : "s"}</span></div>
+        <div className="notice-list">
+          {folderNotices.length > 0 ? folderNotices.map((notice) => (
+            <div key={notice.id} className="notice-entry">
+              <div className="notice-entry-meta">
+                <span className={`notice-channel notice-channel-${notice.channel}`}>{notice.channel}</span>
+                {notice.createdAt && <small>{formatDateTime(notice.createdAt)}</small>}
+              </div>
+              <strong className="notice-entry-title">{notice.template}</strong>
+              {typeof notice.payload?.body === "string" && notice.payload.body && <p className="notice-entry-body">{notice.payload.body.slice(0, 150)}{notice.payload.body.length > 150 ? "..." : ""}</p>}
+              {notice.payload?.attachment ? <div className="notice-attachment"><a href={String(notice.payload.attachment)} target="_blank" rel="noreferrer">Open memo</a></div> : null}
             </div>
-            <strong style={{ display: "block", marginBottom: "6px", color: "#1f2937", fontSize: "14px" }}>{notice.template}</strong>
-            {typeof notice.payload?.body === "string" && notice.payload.body && <p style={{ fontSize: "13px", color: "#4b5563", lineHeight: "1.5", marginBottom: "8px" }}>{notice.payload.body.slice(0, 150)}{notice.payload.body.length > 150 ? "..." : ""}</p>}
-            {notice.payload?.attachment ? <div className="notice-attachment"><a href={String(notice.payload.attachment)} target="_blank" rel="noreferrer" style={{ display: "inline-block", padding: "6px 12px", background: "#3b82f6", color: "white", borderRadius: "4px", fontSize: "12px", textDecoration: "none", fontWeight: "500" }}>Open memo</a></div> : null}
-          </div>
-        )) : (
-          <div className="notice-empty"><p style={{ color: "#6b7280", fontSize: "14px", textAlign: "center", padding: "30px 20px" }}>{folder === "Sent" ? "No sent notices yet." : "No push alerts or operational notices are available. Check back later for updates."}</p></div>
-        )}
+          )) : (
+            <div className="notice-empty"><p>{folder === "Sent" ? "No sent notices yet." : "No push alerts or operational notices are available. Check back later for updates."}</p></div>
+          )}
+        </div>
       </div>
     </article>
   );
