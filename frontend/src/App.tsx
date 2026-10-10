@@ -3365,7 +3365,7 @@ function AppShell() {
   const [role, setRole] = useState<Role>("Tenant");
   const [activeTab, setActiveTab] = useState<Tab>("Overview");
   const [dark, setDark] = useState(true);
-  const [currency, setCurrency] = useState<Currency>("USD");
+  const [currency, setCurrency] = useState<Currency>("KES");
   const [screen, setScreen] = useState<"landing" | "login" | "signup" | "terms" | "privacy" | "password-change" | "app">("landing");
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<BackendUser | null>(null);
@@ -3996,13 +3996,15 @@ function AppShell() {
             <h1>{role} {activeTab}</h1>
           </div>
           <div className="top-actions">
-            <div className="currency-switcher" aria-label="Currency selector">
-              {(["USD", "KES"] as Currency[]).map((option) => (
-                <button key={option} className={currency === option ? "selected" : ""} onClick={() => setCurrency(option)}>{option}</button>
-              ))}
+            <div className="topbar-controls">
+              <div className="currency-switcher" aria-label="Currency selector">
+                {(["USD", "KES"] as Currency[]).map((option) => (
+                  <button key={option} className={currency === option ? "selected" : ""} onClick={() => setCurrency(option)}>{option}</button>
+                ))}
+              </div>
+              <button className="icon-button" onClick={() => setDark((value) => !value)} aria-label="Toggle theme">{dark ? <Sun /> : <Moon />}</button>
+              <button className="icon-button" aria-label="Notifications"><Bell /></button>
             </div>
-            <button className="icon-button" onClick={() => setDark((value) => !value)} aria-label="Toggle theme">{dark ? <Sun /> : <Moon />}</button>
-            <button className="icon-button" aria-label="Notifications"><Bell /></button>
           </div>
         </header>
 
