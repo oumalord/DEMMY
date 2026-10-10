@@ -1989,6 +1989,11 @@ function PaymentsPage({ role, currency, payments, properties, units, tenants, cu
   const [paymentStatus, setPaymentStatus] = useState("Ready to process rent payment.");
   const [latestReceipt, setLatestReceipt] = useState<string | null>(null);
   const canPay = role === "Tenant";
+  const paymentDetailsComplete = paymentMode === "bank"
+    ? Boolean(bankForm.bankName.trim() && bankForm.accountName.trim() && bankForm.accountNumber.trim())
+    : paymentMode === "mpesa" || paymentMode === "mobile_money"
+      ? Boolean(mpesaPhone.trim())
+      : Boolean(cardForm.number.trim() && cardForm.expiry.trim() && cardForm.cvc.trim());
 
   async function handlePay() {
     if (!canPay) {
@@ -2252,14 +2257,14 @@ function PaymentsPage({ role, currency, payments, properties, units, tenants, cu
             <label>Account name<input value={bankForm.accountName} onChange={(event) => setBankForm({ ...bankForm, accountName: event.target.value })} /></label>
             <label>Account number<input value={bankForm.accountNumber} onChange={(event) => setBankForm({ ...bankForm, accountNumber: event.target.value })} /></label>
             <label>Branch / routing code<input placeholder="Optional" value={bankForm.routingNumber} onChange={(event) => setBankForm({ ...bankForm, routingNumber: event.target.value })} /></label>
-            <button className="primary-action" onClick={handlePay}>{canPay ? `Debit ${formatMoney(2000, currency)}` : "Save bank route"}</button>
+            <button className={`primary-action payment-submit-button${paymentDetailsComplete ? " is-ready" : ""}`} onClick={handlePay}>{canPay ? `Debit ${formatMoney(2000, currency)}` : "Save bank route"}</button>
           </div>
         )}
         {(paymentMode === "mpesa" || paymentMode === "mobile_money") && (
           <div className="bank-form">
             <div className="method-note"><Smartphone /> Enter the mobile money phone number. A request will be sent for approval.</div>
             <label>Phone number<input value={mpesaPhone} onChange={(event) => setMpesaPhone(event.target.value)} /></label>
-            <button className="primary-action" onClick={handlePay}>{canPay ? `Pay ${formatMoney(2000, currency)} via ${paymentMode === "mpesa" ? "M-Pesa" : "Airtel Money"}` : `Save ${paymentMode === "mpesa" ? "M-Pesa" : "Airtel Money"} route`}</button>
+            <button className={`primary-action payment-submit-button${paymentDetailsComplete ? " is-ready" : ""}`} onClick={handlePay}>{canPay ? `Pay ${formatMoney(2000, currency)} via ${paymentMode === "mpesa" ? "M-Pesa" : "Airtel Money"}` : `Save ${paymentMode === "mpesa" ? "M-Pesa" : "Airtel Money"} route`}</button>
           </div>
         )}
         {paymentMode === "card" && (
@@ -2268,7 +2273,7 @@ function PaymentsPage({ role, currency, payments, properties, units, tenants, cu
             <label>Card number<input value={cardForm.number} onChange={(event) => setCardForm({ ...cardForm, number: event.target.value })} /></label>
             <label>Expiry<input placeholder="MM/YY" value={cardForm.expiry} onChange={(event) => setCardForm({ ...cardForm, expiry: event.target.value })} /></label>
             <label>CVC<input value={cardForm.cvc} onChange={(event) => setCardForm({ ...cardForm, cvc: event.target.value })} /></label>
-            <button className="primary-action" onClick={handlePay}>{canPay ? `Pay ${formatMoney(2000, currency)} with card` : "Save card route"}</button>
+            <button className={`primary-action payment-submit-button${paymentDetailsComplete ? " is-ready" : ""}`} onClick={handlePay}>{canPay ? `Pay ${formatMoney(2000, currency)} with card` : "Save card route"}</button>
           </div>
         )}
         <p className="status-note">{paymentStatus}{latestReceipt ? ` Receipt: ${latestReceipt}` : ""}</p>

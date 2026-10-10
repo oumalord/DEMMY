@@ -3672,6 +3672,25 @@ body {
   background: var(--rentflow-green-dark);
 }
 
+.payments-grid .payment-submit-button {
+  border: 1px solid #d6dfe5;
+  border-radius: 6px;
+  color: #66716f;
+  background: #edf1f4;
+  box-shadow: none;
+}
+
+.payments-grid .payment-submit-button.is-ready {
+  border-color: #1768d1;
+  color: #fff;
+  background: #1877f2;
+  box-shadow: 0 4px 10px rgba(24, 119, 242, .18);
+}
+
+.payments-grid .payment-submit-button.is-ready:hover {
+  background: #0c63d4;
+}
+
 .payments-grid .bank-form label {
   color: #222;
   font-size: .82rem;
