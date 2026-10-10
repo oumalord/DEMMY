@@ -939,7 +939,82 @@ export async function createMessageThread(user: User, input: {
       [threadId, memberId]
     );
   }
-  return { ...thread.rows[0], memberIds };
+  return { ...thread.rows[0], id: String(thread.rows[0].id), memberIds };
+}
+
+export async function ensureTenantSupportThread(user: User) {
+  if (user.role !== "tenant") return null;
+  const organization = await query<{ organizationId: string }>(
+    "select organization_id as \"organizationId\" from users where id = $1",
+    [user.id]
+  );
+  const organizationId = organization.rows[0]?.organizationId;
+  if (!organizationId) throw new Error("Tenant organization not found.");
+
+  const assigned = await query<{ propertyId: string; propertyName: string; ownerId: string | null; managerId: string | null }>(
+    `select p.id as "propertyId", p.name as "propertyName", p.owner_id as "ownerId", p.manager_id as "managerId"
+     from units u
+     join properties p on p.id = u.property_id
+     where u.tenant_id = $1
+    order by u.label asc
+     limit 1`,
+    [user.id]
+  );
+  const property = assigned.rows[0];
+  const staffIds = property
+    ? [property.ownerId, property.managerId].filter((id): id is string => Boolean(id))
+    : (await query<{ id: string }>(
+      `select id from users
+       where organization_id = $1 and role::text in ('caretaker', 'owner', 'super_admin')
+       order by case role::text when 'caretaker' then 1 when 'owner' then 2 else 3 end
+       limit 10`,
+      [organizationId]
+    )).rows.map((row) => String(row.id));
+  const propertyId = property?.propertyId ?? null;
+  const threadName = property ? `${property.propertyName} support` : "RentFlow Support";
+
+  const existing = await query<{ id: string }>(
+    `select id from message_threads
+     where created_by = $1 and property_id is not distinct from $2 and type = 'support'
+     order by created_at desc
+     limit 1`,
+    [user.id, propertyId]
+  );
+  let supportThreadId = existing.rows[0]?.id;
+  if (!supportThreadId) {
+    const supportThread = await createMessageThread(user, {
+      propertyId: propertyId ?? undefined,
+      name: threadName,
+      type: "support",
+      memberIds: staffIds
+    });
+    supportThreadId = String(supportThread.id);
+  }
+
+  const memberIds = Array.from(new Set([user.id, ...staffIds]));
+  for (const memberId of memberIds) {
+    await query(
+      `insert into message_thread_members (thread_id, user_id, role_label)
+       values ($1,$2,(select role::text from users where id = $2))
+       on conflict do nothing`,
+      [supportThreadId, memberId]
+    );
+  }
+
+  return { id: supportThreadId };
+}
+
+export async function updateMessageThreadPinnedNotice(user: User, threadId: string, pinnedNotice: string | null) {
+  const thread = await getMessageThread(user, threadId);
+  if (!thread) throw new Error("Message thread not found or access denied.");
+  const result = await query(
+    `update message_threads
+     set pinned_notice = $2
+     where id = $1
+     returning id, pinned_notice as "pinnedNotice"`,
+    [threadId, pinnedNotice]
+  );
+  return result.rows[0] ?? null;
 }
 
 export async function createThreadMessage(user: User, input: {

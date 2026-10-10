@@ -290,6 +290,7 @@ interface VisitorPassRecord {
 interface AppChatMessage {
   id: string;
   threadId: string;
+  senderId?: string;
   author: string;
   role: string;
   time: string;
@@ -714,10 +715,13 @@ function TenantHomeDashboard({ user, units, payments, maintenance, notifications
   );
 }
 
-function MessagingCenter({ role, threads, messages, notifications, onLoadThread, onSendMessage }: { role: Role; threads: ServerThread[]; messages: AppChatMessage[]; notifications: ServerNotification[]; onLoadThread: (threadId: string) => void; onSendMessage: (threadId: string, body: string, attachmentUrls?: string[]) => void }) {
+function MessagingCenter({ role, threads, messages, notifications, onLoadThread, onSendMessage, onUpdatePinnedNotice }: { role: Role; threads: ServerThread[]; messages: AppChatMessage[]; notifications: ServerNotification[]; onLoadThread: (threadId: string) => void; onSendMessage: (threadId: string, body: string, attachmentUrls?: string[]) => Promise<boolean>; onUpdatePinnedNotice: (threadId: string, pinnedNotice: string | null) => Promise<boolean> }) {
   const [activeThreadId, setActiveThreadId] = useState(threads[0]?.id ?? "");
   const [draft, setDraft] = useState("");
   const [attachmentUrls, setAttachmentUrls] = useState<string[]>([]);
+  const [sendStatus, setSendStatus] = useState("");
+  const [sending, setSending] = useState(false);
+  const [pinning, setPinning] = useState(false);
   const [threadFilter, setThreadFilter] = useState("all");
   const [selectedPropertyId, setSelectedPropertyId] = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -738,9 +742,13 @@ function MessagingCenter({ role, threads, messages, notifications, onLoadThread,
     }
   }, [activeThread, activeThreadId]);
 
+  useEffect(() => {
+    if (activeThreadId) onLoadThread(activeThreadId);
+  }, [activeThreadId]);
+
   function selectThread(threadId: string) {
     setActiveThreadId(threadId);
-    onLoadThread(threadId);
+    setSendStatus("");
     setAttachmentUrls([]);
   }
 
@@ -754,12 +762,47 @@ function MessagingCenter({ role, threads, messages, notifications, onLoadThread,
     setAttachmentUrls((current) => current.filter((item) => item !== url));
   }
 
-  function sendMessage() {
+  async function sendMessage() {
     const body = draft.trim();
-    if (!body && attachmentUrls.length === 0) return;
-    onSendMessage(activeThread.id, body || "", attachmentUrls);
-    setDraft("");
-    setAttachmentUrls([]);
+    if (!activeThread.id) {
+      setSendStatus("No conversation is available for this account yet.");
+      return;
+    }
+    if ((!body && attachmentUrls.length === 0) || sending) return;
+    setSending(true);
+    setSendStatus("");
+    try {
+      const sent = await onSendMessage(activeThread.id, body, attachmentUrls);
+      if (!sent) throw new Error("Message was not saved. Please try again.");
+      setDraft("");
+      setAttachmentUrls([]);
+      setSendStatus("Message sent.");
+    } catch (error) {
+      setSendStatus(error instanceof Error ? error.message : "Message was not saved. Please try again.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function togglePinnedNotice() {
+    if (!activeThread.id || pinning) return;
+    const pinnedNotice = activeThread.pinnedNotice ? null : activeMessages.at(-1)?.body || activeThread.lastMessage?.body;
+    if (pinnedNotice === undefined) {
+      setSendStatus("Send a message before pinning a notice.");
+      return;
+    }
+    setPinning(true);
+    setSendStatus("");
+    try {
+      if (!await onUpdatePinnedNotice(activeThread.id, pinnedNotice)) {
+        throw new Error("Pinned notice was not saved. Please try again.");
+      }
+      setSendStatus(pinnedNotice ? "Message pinned." : "Pinned message removed.");
+    } catch (error) {
+      setSendStatus(error instanceof Error ? error.message : "Pinned notice was not saved. Please try again.");
+    } finally {
+      setPinning(false);
+    }
   }
 
   return (
@@ -813,10 +856,11 @@ function MessagingCenter({ role, threads, messages, notifications, onLoadThread,
             <h3>{activeThread.name}</h3>
           </div>
           <div className="chat-tools">
-            <button aria-label="Pinned notices"><Pin /></button>
-            <button aria-label="More chat actions"><MoreVertical /></button>
+            <button type="button" className={activeThread.pinnedNotice ? "is-pinned" : ""} aria-label={activeThread.pinnedNotice ? "Unpin notice" : "Pin latest message"} title={activeThread.pinnedNotice ? "Unpin notice" : "Pin latest message"} onClick={togglePinnedNotice} disabled={!activeThread.id || pinning || (!activeThread.pinnedNotice && activeMessages.length === 0 && !activeThread.lastMessage?.body)}><Pin fill={activeThread.pinnedNotice ? "currentColor" : "none"} /></button>
+            <button type="button" aria-label="More chat actions"><MoreVertical /></button>
           </div>
         </div>
+        {activeThread.pinnedNotice && <div className="pinned-notice-banner"><Pin fill="currentColor" /><span><strong>Pinned message</strong>{activeThread.pinnedNotice}</span></div>}
         <div className="message-feed">
           {activeMessages.map((message) => (
             <div key={message.id} className={message.mine ? "message-bubble mine" : "message-bubble"}>
@@ -836,10 +880,10 @@ function MessagingCenter({ role, threads, messages, notifications, onLoadThread,
           ))}
         </div>
         <div className="composer">
-          <button aria-label="Attach file" onClick={() => fileInputRef.current?.click()}><Paperclip /></button>
+          <button type="button" aria-label="Attach file" disabled={!activeThread.id || sending} onClick={() => fileInputRef.current?.click()}><Paperclip /></button>
           <input type="file" multiple hidden ref={fileInputRef} onChange={(event) => handleAttachFiles(event.target.files)} />
-          <input value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => event.key === "Enter" && sendMessage()} placeholder={role === "Tenant" ? "Message management..." : "Message tenants and management..."} />
-          <button className="send-button" aria-label="Send message" onClick={sendMessage}><Send /></button>
+          <input value={draft} disabled={!activeThread.id || sending} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => event.key === "Enter" && void sendMessage()} placeholder={activeThread.id ? role === "Tenant" ? "Message management..." : "Message tenants and management..." : "No conversation available"} />
+          <button type="button" className="send-button" aria-label="Send message" disabled={!activeThread.id || sending || (!draft.trim() && attachmentUrls.length === 0)} onClick={() => void sendMessage()}>{sending ? <span className="send-progress-dot" /> : <Send />}</button>
         </div>
         {attachmentUrls.length > 0 && (
           <div className="attachment-preview-bar">
@@ -851,6 +895,7 @@ function MessagingCenter({ role, threads, messages, notifications, onLoadThread,
             ))}
           </div>
         )}
+        {sendStatus && <p className={`chat-action-status${/not saved|not available|before pinning/i.test(sendStatus) ? " error" : ""}`} role="status">{sendStatus}</p>}
       </div>
 
     </article>
@@ -2521,6 +2566,7 @@ function NoticesPage({ role, notifications, properties, onSendNotice, currentUse
   const [status, setStatus] = useState("");
   const [selectedPropertyId, setSelectedPropertyId] = useState<string>("all");
   const [folder, setFolder] = useState<"Inbox" | "Sent">("Inbox");
+  const [folderOpen, setFolderOpen] = useState(false);
 
   const visibleNotices = notifications.filter((n) => {
     if (role === "Tenant") {
@@ -2576,8 +2622,8 @@ function NoticesPage({ role, notifications, properties, onSendNotice, currentUse
       <div className="panel-heading"><div><span>Read notices</span><h3>Management notices</h3></div><Megaphone /></div>
       {showSentFolder && role !== "Tenant" && (
         <div className="notice-folder-tabs" role="tablist" aria-label="Notice folders">
-          <button type="button" role="tab" aria-selected={folder === "Inbox"} className={folder === "Inbox" ? "selected" : ""} onClick={() => setFolder("Inbox")}>Inbox <span>{groupedVisibleNotices.length - sentNotices.length}</span></button>
-          <button type="button" role="tab" aria-selected={folder === "Sent"} className={folder === "Sent" ? "selected" : ""} onClick={() => setFolder("Sent")}>Sent <span>{sentNotices.length}</span></button>
+          <button type="button" role="tab" aria-selected={folder === "Inbox"} className={folder === "Inbox" ? "selected" : ""} onClick={() => { setFolder("Inbox"); setFolderOpen(false); }}>Inbox <span>{groupedVisibleNotices.length - sentNotices.length}</span></button>
+          <button type="button" role="tab" aria-selected={folder === "Sent"} className={folder === "Sent" ? "selected" : ""} onClick={() => { setFolder("Sent"); setFolderOpen(false); }}>Sent <span>{sentNotices.length}</span></button>
         </div>
       )}
       {role !== "Tenant" && onSendNotice && (!showSentFolder || folder === "Inbox") ? (
@@ -2600,12 +2646,12 @@ function NoticesPage({ role, notifications, properties, onSendNotice, currentUse
           {status && <p className="status-note">{status}</p>}
         </div>
       ) : null}
-      <details className="notice-folder" key={folder}>
-        <summary className="notice-folder-heading">
+      <section className={`notice-folder${folderOpen ? " is-open" : ""}`}>
+        <button type="button" className="notice-folder-heading" aria-expanded={folderOpen} onClick={() => setFolderOpen((open) => !open)}>
           <strong>{folder} folder</strong>
           <span>{folderNotices.length} notice{folderNotices.length === 1 ? "" : "s"}</span>
-        </summary>
-        <div className="notice-list">
+        </button>
+        {folderOpen && <div className="notice-list">
           {folderNotices.length > 0 ? folderNotices.map((notice) => (
             <div key={notice.id} className="notice-entry">
               <div className="notice-entry-meta">
@@ -2621,8 +2667,8 @@ function NoticesPage({ role, notifications, properties, onSendNotice, currentUse
           )) : (
             <div className="notice-empty"><p>{folder === "Sent" ? "No sent notices yet." : "No push alerts or operational notices are available. Check back later for updates."}</p></div>
           )}
-        </div>
-      </details>
+        </div>}
+      </section>
     </article>
   );
 }
@@ -3058,6 +3104,7 @@ function TabContent({
   notifications,
   onLoadThread,
   onSendMessage,
+  onUpdatePinnedNotice,
   onSendPushAlert,
   onCreateListing,
   onCreateUnit,
@@ -3098,7 +3145,8 @@ function TabContent({
   messages: AppChatMessage[];
   notifications: ServerNotification[];
   onLoadThread: (threadId: string) => Promise<void>;
-  onSendMessage: (threadId: string, body: string, attachmentUrls?: string[]) => Promise<void>;
+  onSendMessage: (threadId: string, body: string, attachmentUrls?: string[]) => Promise<boolean>;
+  onUpdatePinnedNotice: (threadId: string, pinnedNotice: string | null) => Promise<boolean>;
   onSendPushAlert: (message: string, propertyId?: string) => Promise<void>;
   onCreateListing: (payload: Record<string, unknown>) => Promise<ServerProperty | undefined>;
   onCreateUnit: (payload: Record<string, unknown>) => Promise<ServerUnit | null>;
@@ -3132,7 +3180,7 @@ function TabContent({
   if (activeTab === "Properties") return <PropertiesPage role={role} currency={currency} properties={properties} units={units} tenants={tenants} expenses={expenses} onCreateListing={onCreateListing} onCreateUnit={onCreateUnit} onCreateTenant={onCreateTenant} onUpdateUnit={onUpdateUnit} onRecordExpense={onRecordExpense} onUploadAgreementTemplate={onUploadAgreementTemplate} onGenerateLeaseDocuments={onGenerateLeaseDocuments} />;
   if (activeTab === "Payments") return <PaymentsPage role={role} currency={currency} payments={payments} properties={properties} units={units} tenants={tenants} currentUser={currentUser} onMakePayment={onMakePayment} onApprovePayment={onApprovePayment} />;
   if (activeTab === "Maintenance") return <MaintenancePage role={role} maintenanceData={maintenanceData} onSubmitMaintenance={onSubmitMaintenance} onUpdateMaintenance={onUpdateMaintenance} />;
-  if (activeTab === "Messaging") return <section className="messaging-grid"><MessagingCenter role={role} threads={threads} messages={messages} notifications={notifications} onLoadThread={onLoadThread} onSendMessage={onSendMessage} /><NoticesPage role={role} notifications={notifications} properties={properties} onSendNotice={onSendNotice} currentUserId={currentUser?.id} /></section>;
+  if (activeTab === "Messaging") return <section className="messaging-grid"><MessagingCenter role={role} threads={threads} messages={messages} notifications={notifications} onLoadThread={onLoadThread} onSendMessage={onSendMessage} onUpdatePinnedNotice={onUpdatePinnedNotice} /><NoticesPage role={role} notifications={notifications} properties={properties} onSendNotice={onSendNotice} currentUserId={currentUser?.id} /></section>;
   if (activeTab === "Notices") return <NoticesPage role={role} notifications={notifications} properties={properties} onSendNotice={onSendNotice} currentUserId={currentUser?.id} showSentFolder />;
   if (activeTab === "Visitors") return <VisitorsPage records={visitorRecords} onCheckIn={onCheckInVisitor} onCheckOut={onCheckOutVisitor} />;
   if (activeTab === "Lease") return role === "Tenant"
@@ -3437,7 +3485,17 @@ function AppShell() {
         const payload = JSON.parse(event.data);
         if (payload.type === "chat.message") {
           const message = payload.message as AppChatMessage;
-          setMessages((current) => [...current, { ...message, time: formatDateTime(message.createdAt || new Date().toISOString()) }]);
+          const normalizedMessage = {
+            ...message,
+            author: message.author || (message as AppChatMessage & { senderName?: string }).senderName || "RentFlow member",
+            role: message.role || (message as AppChatMessage & { senderRole?: string }).senderRole || "Member",
+            time: message.time || formatDateTime(message.createdAt || new Date().toISOString())
+          };
+          setMessages((current) => current.some((item) => item.id === normalizedMessage.id) ? current : [...current, normalizedMessage]);
+        }
+        if (payload.type === "message.thread.pinned") {
+          const { threadId, pinnedNotice } = payload as { threadId: string; pinnedNotice: string | null };
+          setThreads((current) => current.map((thread) => thread.id === threadId ? { ...thread, pinnedNotice: pinnedNotice ?? undefined } : thread));
         }
         if (payload.type === "notification.sent") {
           const items = payload.notifications as ServerNotification[];
@@ -3608,15 +3666,21 @@ function AppShell() {
       const result = await fetchJson<{ thread: ServerThread; messages: AppChatMessage[] }>(`/api/messages/threads/${threadId}`, {
         headers: getAuthHeaders(accessToken)
       });
-      setMessages(result.messages.map((message) => ({ ...message, time: formatDateTime(message.createdAt || new Date().toISOString()) })));
-      setThreads((current) => current.map((thread) => thread.id === threadId ? { ...thread, unreadCount: 0 } : thread));
+      setMessages(result.messages.map((message) => ({
+        ...message,
+        author: message.author || (message as AppChatMessage & { senderName?: string }).senderName || "RentFlow member",
+        role: message.role || (message as AppChatMessage & { senderRole?: string }).senderRole || "Member",
+        mine: message.mine ?? message.senderId === currentUser?.id,
+        time: message.time || formatDateTime(message.createdAt || new Date().toISOString())
+      })));
+      setThreads((current) => current.map((thread) => thread.id === threadId ? { ...thread, pinnedNotice: result.thread.pinnedNotice, unreadCount: 0 } : thread));
     } catch (error) {
       console.error(error);
     }
   }
 
   async function sendThreadMessage(threadId: string, body: string, attachmentUrls: string[] = []) {
-    if (!accessToken) return;
+    if (!accessToken) throw new Error("Sign in again before sending a message.");
     try {
       const result = await fetchJson<{ data: AppChatMessage }>("/api/messages", {
         method: "POST",
@@ -3625,14 +3689,34 @@ function AppShell() {
       });
       const message = {
         ...result.data,
+        senderId: currentUser?.id,
         author: currentUser?.name ?? "You",
         role: role,
+        mine: true,
         time: formatDateTime(result.data.createdAt || new Date().toISOString())
       };
-      setMessages((current) => [...current, message]);
+      setMessages((current) => current.some((item) => item.id === message.id) ? current : [...current, message]);
       setThreads((current) => current.map((thread) => thread.id === threadId ? { ...thread, lastMessage: { senderName: message.author, body: message.body, createdAt: result.data.createdAt ?? new Date().toISOString() } } : thread));
+      return true;
     } catch (error) {
       console.error(error);
+      throw error;
+    }
+  }
+
+  async function updatePinnedNotice(threadId: string, pinnedNotice: string | null) {
+    if (!accessToken) return false;
+    try {
+      const result = await fetchJson<{ data: { pinnedNotice?: string | null } }>(`/api/messages/threads/${threadId}/pin`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders(accessToken) },
+        body: JSON.stringify({ pinnedNotice })
+      });
+      setThreads((current) => current.map((thread) => thread.id === threadId ? { ...thread, pinnedNotice: result.data.pinnedNotice ?? undefined } : thread));
+      return true;
+    } catch (error) {
+      console.error(error);
+      return false;
     }
   }
 
@@ -4054,6 +4138,7 @@ function AppShell() {
           notifications={notifications}
           onLoadThread={loadThread}
           onSendMessage={sendThreadMessage}
+          onUpdatePinnedNotice={updatePinnedNotice}
           onSendPushAlert={sendPushAlert}
           onCreateListing={createListing}
           onCreateUnit={createUnit}

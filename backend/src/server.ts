@@ -62,6 +62,8 @@ import {
   listThreadMessages,
   listUnits,
   updateUnit,
+  ensureTenantSupportThread,
+  updateMessageThreadPinnedNotice,
   listExpenses,
   createExpense,
   upsertMonthlyRentReminder,
@@ -519,7 +521,6 @@ app.post("/api/agreements/generate", authenticate, requireRoles("caretaker", "ow
         fileName: `${String(lease.propertyName).replace(/\s+/g, "_")}-${String(lease.unitLabel)}-lease.txt`
       };
     });
-
     await createAuditLog(req.user!.id, "GENERATE_LEASES", "property", propertyId, { templateId: template.id, generated: leaseItems.length }).catch(() => undefined);
     res.json({ data: leaseItems });
   } catch (error) {
@@ -1133,6 +1134,13 @@ app.put("/api/maintenance/:ticketId", authenticate, requireRoles("caretaker", "o
 });
 
 app.get("/api/messages/threads", authenticate, async (req, res) => {
+  if (req.user!.role === "tenant") {
+    try {
+      await ensureTenantSupportThread(req.user!);
+    } catch (error) {
+      return res.status(503).json({ error: error instanceof Error ? error.message : "Could not prepare tenant support chat." });
+    }
+  }
   const dbThreads = await listMessageThreads(req.user!).catch(() => null);
   const scopedThreadData = (dbThreads ?? messageThreads
     .filter((thread) => thread.memberIds.includes(req.user!.id) || req.user!.role === "super_admin")
@@ -1147,7 +1155,17 @@ app.get("/api/messages/threads", authenticate, async (req, res) => {
       };
     })) as Array<{ propertyId?: string; memberIds: string[]; id: string; name: string; type: string; [key: string]: unknown }>;
 
-  const allowedPropertyIds = getAllowedPropertyIdsForUser(req.user!);
+  const databaseProperties = await listProperties().catch(() => properties) as Array<{ id: string; ownerId?: string; managerId?: string }>;
+  const databaseUnits = await listUnits().catch(() => units) as Array<{ propertyId: string; tenantId?: string }>;
+  const allowedPropertyIds = req.user!.role === "super_admin"
+    ? databaseProperties.map((property) => String(property.id))
+    : req.user!.role === "tenant"
+      ? databaseUnits.filter((unit) => unit.tenantId === req.user!.id).map((unit) => String(unit.propertyId))
+      : databaseProperties
+        .filter((property) => req.user!.role === "caretaker"
+          ? property.managerId === req.user!.id
+          : property.ownerId === req.user!.id || property.managerId === req.user!.id)
+        .map((property) => String(property.id));
   const filtered = req.user!.role === "super_admin" ? scopedThreadData : scopedThreadData.filter((thread) => {
     if (!thread.propertyId) return true;
     return allowedPropertyIds.includes(thread.propertyId);
@@ -1191,7 +1209,18 @@ app.post("/api/messages/threads", authenticate, requireRoles("caretaker", "owner
 });
 
 app.post("/api/messages", authenticate, async (req, res) => {
-  const dbMessage = await createThreadMessage(req.user!, req.body).catch(() => null);
+  const threadId = String(req.body.threadId ?? "").trim();
+  const body = String(req.body.body ?? "");
+  const attachmentUrls = Array.isArray(req.body.attachmentUrls) ? req.body.attachmentUrls.map(String) : [];
+  if (!threadId) return res.status(400).json({ error: "Select a conversation before sending a message." });
+  if (!body.trim() && attachmentUrls.length === 0) return res.status(400).json({ error: "Write a message or attach a file before sending." });
+
+  let dbMessage: Awaited<ReturnType<typeof createThreadMessage>>;
+  try {
+    dbMessage = await createThreadMessage(req.user!, { threadId, body, attachmentUrls });
+  } catch (error) {
+    return res.status(400).json({ error: error instanceof Error ? error.message : "Could not save message." });
+  }
   if (dbMessage) {
     const messageId = String((dbMessage as { id: string }).id);
     await Promise.all([
@@ -1200,13 +1229,13 @@ app.post("/api/messages", authenticate, async (req, res) => {
         template: "New RentFlow message",
         payload: { threadId: req.body.threadId, messageId }
       }).catch(() => undefined),
-      createAuditLog(req.user!.id, "MESSAGE_SENT", "thread", req.body.threadId, { messageId }).catch(() => undefined)
+      createAuditLog(req.user!.id, "MESSAGE_SENT", "thread", threadId, { messageId }).catch(() => undefined)
     ]);
-    broadcastRealtime({ type: "chat.message", message: dbMessage, threadId: req.body.threadId });
+    broadcastRealtime({ type: "chat.message", message: dbMessage, threadId });
     return res.status(201).json({ data: dbMessage, status: "delivered", notifications: ["push", "in_app"], storage: "postgres" });
   }
 
-  const thread = messageThreads.find((candidate) => candidate.id === req.body.threadId);
+  const thread = messageThreads.find((candidate) => candidate.id === threadId);
   if (!thread) return res.status(404).json({ error: "Message thread not found" });
   if (!thread.memberIds.includes(req.user!.id) && req.user!.role !== "super_admin") {
     return res.status(403).json({ error: "You are not a member of this thread" });
@@ -1217,14 +1246,37 @@ app.post("/api/messages", authenticate, async (req, res) => {
     senderId: req.user!.id,
     senderName: req.user!.name,
     senderRole: req.user!.role,
-    body: req.body.body,
-    attachmentUrls: req.body.attachmentUrls ?? [],
+    body,
+    attachmentUrls,
     createdAt: new Date().toISOString(),
     readBy: [req.user!.id]
   };
   chatMessages.push(message);
   broadcastRealtime({ type: "chat.message", message, threadId: message.threadId });
   res.status(201).json({ data: message, status: "delivered", notifications: ["push", "in_app"], storage: "memory-fallback" });
+});
+
+app.put("/api/messages/threads/:threadId/pin", authenticate, async (req, res) => {
+  const threadId = String(req.params.threadId);
+  const pinnedNotice = req.body.pinnedNotice == null ? null : String(req.body.pinnedNotice).trim();
+  try {
+    const updated = await updateMessageThreadPinnedNotice(req.user!, threadId, pinnedNotice || null);
+    if (updated) {
+      broadcastRealtime({ type: "message.thread.pinned", threadId, pinnedNotice: updated.pinnedNotice });
+      return res.json({ data: updated, storage: "postgres" });
+    }
+  } catch {
+    // Continue to the in-memory thread store when the database is unavailable.
+  }
+
+  const thread = messageThreads.find((candidate) => candidate.id === threadId);
+  if (!thread) return res.status(404).json({ error: "Message thread not found." });
+  if (!thread.memberIds.includes(req.user!.id) && req.user!.role !== "super_admin") {
+    return res.status(403).json({ error: "You are not a member of this conversation." });
+  }
+  thread.pinnedNotice = pinnedNotice || undefined;
+  broadcastRealtime({ type: "message.thread.pinned", threadId, pinnedNotice: thread.pinnedNotice ?? null });
+  return res.json({ data: { id: threadId, pinnedNotice: thread.pinnedNotice ?? null }, storage: "memory-fallback" });
 });
 
 app.get("/api/notifications/schedules", authenticate, requireRoles("caretaker", "owner", "super_admin"), async (req, res) => {

@@ -3279,13 +3279,12 @@ body {
   padding: 0 15px;
   color: #111;
   background: #f7faf8;
+  border: 0;
+  font-family: inherit;
   font-size: .84rem;
   cursor: pointer;
-  list-style: none;
-}
-
-.notice-folder-heading::-webkit-details-marker {
-  display: none;
+  text-align: left;
+  width: 100%;
 }
 
 .notice-folder-heading::after {
@@ -3300,11 +3299,11 @@ body {
   transition: transform .16s ease;
 }
 
-.notice-folder[open] > .notice-folder-heading {
+.notice-folder.is-open > .notice-folder-heading {
   border-bottom: 1px solid var(--rentflow-line);
 }
 
-.notice-folder[open] > .notice-folder-heading::after {
+.notice-folder.is-open > .notice-folder-heading::after {
   margin-top: 4px;
   transform: rotate(225deg);
 }
@@ -3421,6 +3420,81 @@ body {
   color: #414141;
   text-align: center;
   font-size: .82rem;
+}
+
+.chat-tools button.is-pinned {
+  border-color: #07584e;
+  color: #fff;
+  background: #07584e;
+}
+
+.chat-tools button:disabled,
+.composer button:disabled {
+  cursor: not-allowed;
+  opacity: .5;
+}
+
+.pinned-notice-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 10px 16px;
+  border-bottom: 1px solid #d5e7e0;
+  color: #153d36;
+  background: #eaf5f1;
+  font-size: .8rem;
+  line-height: 1.45;
+}
+
+.pinned-notice-banner > svg {
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+  color: var(--rentflow-green-dark);
+}
+
+.pinned-notice-banner span {
+  display: grid;
+  gap: 2px;
+}
+
+.pinned-notice-banner strong {
+  color: #07584e;
+  font-size: .72rem;
+}
+
+.chat-action-status {
+  margin: 0;
+  padding: 7px 13px;
+  color: #07584e;
+  background: #f0f7f4;
+  font-size: .76rem;
+  font-weight: 650;
+}
+
+.chat-action-status.error {
+  color: #8f2020;
+  background: #fff0f0;
+}
+
+.composer .send-button:disabled {
+  border-color: #cbd5d1;
+  color: #66716f !important;
+  background: #e8eeeb !important;
+  box-shadow: none;
+}
+
+.send-progress-dot {
+  width: 13px;
+  height: 13px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: send-progress-spin .7s linear infinite;
+}
+
+@keyframes send-progress-spin {
+  to { transform: rotate(360deg); }
 }
 
 .topbar-controls {
