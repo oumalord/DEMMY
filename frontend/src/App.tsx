@@ -682,15 +682,12 @@ function TenantHomeDashboard({ user, units, payments, maintenance, notifications
   );
 }
 
-function MessagingCenter({ role, threads, messages, notifications, onLoadThread, onSendMessage, onSendPushAlert }: { role: Role; threads: ServerThread[]; messages: AppChatMessage[]; notifications: ServerNotification[]; onLoadThread: (threadId: string) => void; onSendMessage: (threadId: string, body: string, attachmentUrls?: string[]) => void; onSendPushAlert: (message: string, propertyId?: string) => Promise<void> }) {
+function MessagingCenter({ role, threads, messages, notifications, onLoadThread, onSendMessage }: { role: Role; threads: ServerThread[]; messages: AppChatMessage[]; notifications: ServerNotification[]; onLoadThread: (threadId: string) => void; onSendMessage: (threadId: string, body: string, attachmentUrls?: string[]) => void }) {
   const [activeThreadId, setActiveThreadId] = useState(threads[0]?.id ?? "");
   const [draft, setDraft] = useState("");
   const [attachmentUrls, setAttachmentUrls] = useState<string[]>([]);
-  const [noticeStatus, setNoticeStatus] = useState("Rent reminder is scheduled for the 1st of every month, due by the 5th.");
   const [threadFilter, setThreadFilter] = useState("all");
   const [selectedPropertyId, setSelectedPropertyId] = useState("");
-  const [pushAlertLoading, setPushAlertLoading] = useState(false);
-  const [pushAlertMessage, setPushAlertMessage] = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const filteredThreads = useMemo(() => {
@@ -725,33 +722,38 @@ function MessagingCenter({ role, threads, messages, notifications, onLoadThread,
     setAttachmentUrls((current) => current.filter((item) => item !== url));
   }
 
-  async function sendMessage() {
+  function sendMessage() {
     const body = draft.trim();
-    if (!body && attachmentUrls.length === 0) {
-      setNoticeStatus("Type a message or attach a file before sending.");
-      return;
-    }
-    if (!activeThread.id) {
-      setNoticeStatus("Choose a group before sending a message.");
-      return;
-    }
-    await onSendMessage(activeThread.id, body || "", attachmentUrls);
-    onLoadThread(activeThread.id);
+    if (!body && attachmentUrls.length === 0) return;
+    onSendMessage(activeThread.id, body || "", attachmentUrls);
     setDraft("");
     setAttachmentUrls([]);
-    setNoticeStatus(`Message sent to ${activeThread.name}. Push, email, and in-app notifications queued.`);
   }
 
   return (
     <article className="panel messaging-panel">
       <div className="chat-sidebar">
         <div className="chat-title">
-          <div><span>{role === "Tenant" ? "Tenant support" : "Managed communication"}</span><h3>RentFlow Groups</h3></div>
+          <div>
+            <span>{role === "Tenant" ? "Tenant support" : "Managed communication"}</span>
+            <h3>RentFlow Groups</h3>
+          </div>
           <button aria-label="Search chats"><Search /></button>
         </div>
         {role !== "Tenant" && (
           <div className="chat-filter">
-            <label className="listing-filter-label">Listing<select value={selectedPropertyId} onChange={(event) => setSelectedPropertyId(event.target.value)}><option value="">All listings</option>{threads.map((thread) => thread.propertyId).filter((propertyId, index, values) => propertyId && values.indexOf(propertyId) === index).map((propertyId) => <option key={propertyId} value={propertyId}>{propertyId}</option>)}</select></label>
+            <label className="listing-filter-label">
+              Listing
+              <select value={selectedPropertyId} onChange={(event) => setSelectedPropertyId(event.target.value)}>
+                <option value="">All listings</option>
+                {threads
+                  .map((thread) => thread.propertyId)
+                  .filter((propertyId, index, values) => propertyId && values.indexOf(propertyId) === index)
+                  .map((propertyId) => (
+                    <option key={propertyId} value={propertyId}>{propertyId}</option>
+                  ))}
+              </select>
+            </label>
             <button className={threadFilter === "all" ? "selected" : ""} onClick={() => setThreadFilter("all")}>All</button>
             <button className={threadFilter === "tenant" ? "selected" : ""} onClick={() => setThreadFilter("tenant")}>Tenant</button>
             <button className={threadFilter === "owner" ? "selected" : ""} onClick={() => setThreadFilter("owner")}>Owner</button>
@@ -761,7 +763,11 @@ function MessagingCenter({ role, threads, messages, notifications, onLoadThread,
           {filteredThreads.map((thread) => (
             <button key={thread.id} className={thread.id === activeThreadId ? "thread active-thread" : "thread"} onClick={() => selectThread(thread.id)}>
               <div className="avatar-stack">{thread.name.slice(0, 2).toUpperCase()}</div>
-              <span><strong>{thread.name}</strong><small>{thread.type.replace("_", " ")} • {thread.memberIds.length} members</small><em>{thread.lastMessage?.body ?? "No recent updates"}</em></span>
+              <span>
+                <strong>{thread.name}</strong>
+                <small>{thread.type.replace("_", " ")} • {thread.memberIds.length} members</small>
+                <em>{thread.lastMessage?.body ?? "No recent updates"}</em>
+              </span>
               {thread.unreadCount ? <b>{thread.unreadCount}</b> : null}
             </button>
           ))}
@@ -912,7 +918,7 @@ function OverviewPage({
     phone: "",
     email: "",
     reason: "",
-    checkIn: new Date().toISOString().slice(0, 16),
+    checkIn: "",
     checkOut: "",
     destination: "",
     propertyId: properties[0]?.id ?? "",
@@ -1103,13 +1109,13 @@ function OverviewPage({
             </div>
             <form onSubmit={handleVisitorSubmit} className="form-panel">
               <div className="property-form-grid">
-                <label>Visitor name<input required value={visitorForm.visitorName} onChange={(event) => setVisitorForm({ ...visitorForm, visitorName: event.target.value })} placeholder="John Kamau" /></label>
-                <label>Contact number<input required value={visitorForm.phone} onChange={(event) => setVisitorForm({ ...visitorForm, phone: event.target.value })} placeholder="+254700111222" /></label>
-                <label>Email<input required type="email" value={visitorForm.email} onChange={(event) => setVisitorForm({ ...visitorForm, email: event.target.value })} placeholder="john@email.com" /></label>
+                <label>Visitor name<input required value={visitorForm.visitorName} onChange={(event) => setVisitorForm({ ...visitorForm, visitorName: event.target.value })} /></label>
+                <label>Contact number<input required value={visitorForm.phone} onChange={(event) => setVisitorForm({ ...visitorForm, phone: event.target.value })} /></label>
+                <label>Email<input required type="email" value={visitorForm.email} onChange={(event) => setVisitorForm({ ...visitorForm, email: event.target.value })} /></label>
                 <label>Reason for visit<textarea required value={visitorForm.reason} onChange={(event) => setVisitorForm({ ...visitorForm, reason: event.target.value })} placeholder="Deliveries, maintenance, family visit..." /></label>
                 <label>Check-in datetime<input type="datetime-local" value={visitorForm.checkIn} onChange={(event) => setVisitorForm({ ...visitorForm, checkIn: event.target.value })} /></label>
                 <label>Check-out datetime<input type="datetime-local" value={visitorForm.checkOut} onChange={(event) => setVisitorForm({ ...visitorForm, checkOut: event.target.value })} /></label>
-                <label>Destination<input required value={visitorForm.destination} onChange={(event) => setVisitorForm({ ...visitorForm, destination: event.target.value })} placeholder="Unit A-12 / Gate-house / Manager office" /></label>
+                <label>Destination<input required value={visitorForm.destination} onChange={(event) => setVisitorForm({ ...visitorForm, destination: event.target.value })} /></label>
                 <label>Property<select required value={visitorForm.propertyId} onChange={(event) => {
                   const nextProperty = properties.find((item) => item.id === event.target.value);
                   const nextUnit = units.find((item) => item.propertyId === event.target.value);
@@ -1125,8 +1131,8 @@ function OverviewPage({
                   <option value="">{units.some((item) => item.propertyId === visitorForm.propertyId) ? "Select unit" : "No units available"}</option>
                   {units.filter((item) => item.propertyId === visitorForm.propertyId).map((unit) => <option key={unit.id} value={unit.id}>{unit.label}</option>)}
                 </select></label>
-                <label>Floor<input value={visitorForm.floor} onChange={(event) => setVisitorForm({ ...visitorForm, floor: event.target.value })} placeholder="3" /></label>
-                <label>House number (estate)<input value={visitorForm.houseNumber} onChange={(event) => setVisitorForm({ ...visitorForm, houseNumber: event.target.value })} placeholder="E-17" /></label>
+                <label>Floor<input value={visitorForm.floor} onChange={(event) => setVisitorForm({ ...visitorForm, floor: event.target.value })} /></label>
+                <label>House number (estate)<input value={visitorForm.houseNumber} onChange={(event) => setVisitorForm({ ...visitorForm, houseNumber: event.target.value })} /></label>
                 <label>Status<select value={visitorForm.status} onChange={(event) => setVisitorForm({ ...visitorForm, status: event.target.value as "pending" | "active" | "checked-out" })}>
                   <option value="pending">Pending arrival</option>
                   <option value="active">Active</option>
@@ -1373,6 +1379,7 @@ function PropertiesPage({
   onGenerateLeaseDocuments
 }: {
   role: Role;
+  const [propertySection, setPropertySection] = useState<"Portfolio" | "Listings" | "Tenants & units" | "Expenses">("Portfolio");
   currency: Currency;
   properties: ServerProperty[];
   units: ServerUnit[];
@@ -1406,7 +1413,7 @@ function PropertiesPage({
     templateText: ""
   });
   const [unitsForm, setUnitsForm] = useState<Array<{ block: string; floor: string; number: string; rent: string; deposit: string; leaseMonths: string; status: string }>>([
-    { block: "", floor: "", number: "", rent: "", deposit: "", leaseMonths: "12", status: "vacant" }
+    { block: "", floor: "", number: "", rent: "", deposit: "", leaseMonths: "", status: "vacant" }
   ]);
   const [listingStatus, setListingStatus] = useState("");
   const [leaseStatus, setLeaseStatus] = useState("");
@@ -1528,7 +1535,7 @@ function PropertiesPage({
   const vacantUnits = selectedPropertyUnits.filter((unit) => unit.status === "vacant").length;
 
   async function addUnitRow() {
-    setUnitsForm((current) => [...current, { block: "", floor: "", number: "", rent: "", deposit: "", leaseMonths: "12", status: "vacant" }]);
+    setUnitsForm((current) => [...current, { block: "", floor: "", number: "", rent: "", deposit: "", leaseMonths: "", status: "vacant" }]);
   }
 
   async function createListing() {
@@ -1577,6 +1584,7 @@ function PropertiesPage({
           floor: unit.floor || undefined,
           number: unit.number || undefined,
           rent: Number(unit.rent),
+      setPropertySection("Tenants & units");
           deposit: Number(unit.deposit || 0),
           leaseMonths: Number(unit.leaseMonths || 12),
           status: unit.status
@@ -1588,8 +1596,15 @@ function PropertiesPage({
         propertyType: "Apartments", contactName: "", contactPhone: "", contactEmail: "", contractFee: "", managementQuote: "",
         valuation: "", templateName: "", templateFileName: "", templateText: ""
       });
-      setUnitsForm([{ block: "", floor: "", number: "", rent: "", deposit: "", leaseMonths: "12", status: "vacant" }]);
+      setUnitsForm([{ block: "", floor: "", number: "", rent: "", deposit: "", leaseMonths: "", status: "vacant" }]);
       setManagingPropertyId(property.id);
+        {role !== "Tenant" && (
+          <nav className="property-tabs" aria-label="Property sections" role="tablist">
+            {(["Portfolio", "Listings", "Tenants & units", "Expenses"] as const).map((section) => (
+              <button key={section} type="button" role="tab" aria-selected={propertySection === section} className={propertySection === section ? "selected" : ""} onClick={() => setPropertySection(section)}>{section}</button>
+            ))}
+          </nav>
+        )}
       setUnitsManagementStatus(`✓ Property created! Now add units to ${property.name} using the form below.`);
     } catch (error) {
       setListingStatus(error instanceof Error ? error.message : "Create listing failed.");
@@ -1601,7 +1616,7 @@ function PropertiesPage({
       <article className="panel wide-panel">
         <div className="panel-heading">
           <div><span>{role === "Tenant" ? "My occupancy" : "Property operations"}</span><h3>{role === "Tenant" ? "Unit overview" : "Properties"}</h3></div>
-          {role !== "Tenant" && <button onClick={() => setListingStatus("Start a new property listing below.")}>Add listing</button>}
+          {role !== "Tenant" && <button onClick={() => { setPropertySection("Listings"); setListingStatus("Start a new property listing below."); }}>Add listing</button>}
         </div>
         {role === "Tenant" ? (
           <div className="tenant-selection-panel">
@@ -1628,7 +1643,7 @@ function PropertiesPage({
               <span>{properties.find((property) => property.id === selectedPropertyId)?.name ?? "No listing selected"}</span>
             </div>
           </div>
-        ) : (
+        ) : propertySection === "Portfolio" ? (
           <div className="property-portfolio-grid">
             {properties.map((property) => {
               const propertyUnits = units.filter((unit) => unit.propertyId === property.id);
@@ -1644,8 +1659,8 @@ function PropertiesPage({
               );
             })}
           </div>
-        )}
-        {role !== "Tenant" && selectedProperty && (
+        ) : null}
+        {role !== "Tenant" && propertySection === "Portfolio" && selectedProperty && (
           <div className="lease-generation-panel">
             <button className="secondary-action" onClick={generateLeasePackage}>Generate tenant leases</button>
             {leaseStatus && <p className="status-note">{leaseStatus}</p>}
@@ -1662,8 +1677,9 @@ function PropertiesPage({
             )}
           </div>
         )}
-        {role !== "Tenant" && (
-          <div className="management-ops-grid">
+        {role !== "Tenant" && (propertySection === "Tenants & units" || propertySection === "Expenses") && (
+          <div className="management-ops-grid property-tools-grid">
+            {propertySection === "Tenants & units" && (
             <article className="panel form-panel onboard-panel">
               <div className="panel-heading"><div><span>Add tenants & assign units</span><h3>Register tenant and allocate property</h3></div></div>
               <div className="form-grid">
@@ -1703,9 +1719,11 @@ function PropertiesPage({
                 </select></label>
               </div>
               <div className="form-grid">
-                <label>Full name<input value={tenantForm.name} onChange={(event) => setTenantForm({ ...tenantForm, name: event.target.value })} placeholder="Amina Otieno" /></label>
-                <label>Email address<input value={tenantForm.email} onChange={(event) => setTenantForm({ ...tenantForm, email: event.target.value })} placeholder="tenant@rentflow.app" /></label>
-                <label>Phone number<input value={tenantForm.phone} onChange={(event) => setTenantForm({ ...tenantForm, phone: event.target.value })} placeholder="+254700000101" /></label>
+                <label>Full name<input value={tenantForm.name} onChange={(event) => setTenantForm({ ...tenantForm, name: event.target.value })} /></label>
+            )}
+                <label>Email address<input value={tenantForm.email} onChange={(event) => setTenantForm({ ...tenantForm, email: event.target.value })} /></label>
+            {propertySection === "Expenses" && (
+                <label>Phone number<input value={tenantForm.phone} onChange={(event) => setTenantForm({ ...tenantForm, phone: event.target.value })} /></label>
               </div>
               {tenantForm.propertyId && units.find((u) => u.id === tenantForm.unitId)?.block && (
                 <div className="form-grid">
@@ -1731,8 +1749,9 @@ function PropertiesPage({
                   <option value="Supplies">Supplies</option>
                 </select></label>
                 <label>Description<textarea value={expenseForm.description} onChange={(event) => setExpenseForm({ ...expenseForm, description: event.target.value })} placeholder="Repair or vendor expense details." rows={3} /></label>
-                <label>Amount<input value={expenseForm.amount} onChange={(event) => setExpenseForm({ ...expenseForm, amount: event.target.value })} placeholder="2200" /></label>
-                <label>Receipt URL<input value={expenseForm.receiptUrl} onChange={(event) => setExpenseForm({ ...expenseForm, receiptUrl: event.target.value })} placeholder="https://rentflow.local/receipts/exp_123.pdf" /></label>
+                <label>Amount<input value={expenseForm.amount} onChange={(event) => setExpenseForm({ ...expenseForm, amount: event.target.value })} /></label>
+                <label>Receipt URL<input value={expenseForm.receiptUrl} onChange={(event) => setExpenseForm({ ...expenseForm, receiptUrl: event.target.value })} /></label>
+            )}
               </div>
               <button className="primary-action" onClick={recordExpenseEntry}>Record expense</button>
               {expenseStatus && <p className="status-note">{expenseStatus}</p>}
@@ -1749,7 +1768,7 @@ function PropertiesPage({
           </div>
         )}
 
-        <div className="responsive-table">
+        {(role === "Tenant" || propertySection === "Portfolio") && <div className="responsive-table">
           {properties.map((property) => (
             <div className="property-row" key={property.id}>
               <span><strong>{property.name}</strong><small>{property.location ?? property.address}</small></span>
@@ -1760,7 +1779,7 @@ function PropertiesPage({
                 <span>Contract fee: {property.contractFee ? `${formatMoney(property.contractFee, currency)}` : "N/A"}</span>
                 <span>Management: {property.managementQuote ?? "TBD"}</span>
               </div>
-              <button className={role === "Tenant" ? "locked-action" : ""} onClick={() => !role.includes("Tenant") && setManagingPropertyId(property.id)}>{role === "Tenant" ? "View only" : "Manage"}</button>
+              <button className={role === "Tenant" ? "locked-action" : ""} onClick={() => { if (!role.includes("Tenant")) { setManagingPropertyId(property.id); setPropertySection("Tenants & units"); } }}>{role === "Tenant" ? "View only" : "Manage"}</button>
             </div>
           ))}
           {role !== "Tenant" && selectedProperty && (
@@ -1778,9 +1797,9 @@ function PropertiesPage({
               ))}
             </div>
           )}
-        </div>
+        </div>}
 
-        {role !== "Tenant" && managingPropertyId && (
+        {role !== "Tenant" && propertySection === "Tenants & units" && managingPropertyId && (
           <article className="panel form-panel units-management-panel">
             <div className="panel-heading"><div><span>Add units</span><h3>Create units for {properties.find((p) => p.id === managingPropertyId)?.name}</h3></div></div>
             <div className="unit-grid">
@@ -1790,32 +1809,32 @@ function PropertiesPage({
                       const next = [...unitsForm];
                       next[index].block = event.target.value;
                       setUnitsForm(next);
-                    }} placeholder="A" /></label>
+                    }} /></label>
                   <label>Floor<input value={unit.floor} onChange={(event) => {
                       const next = [...unitsForm];
                       next[index].floor = event.target.value;
                       setUnitsForm(next);
-                    }} placeholder="01" /></label>
+                    }} /></label>
                   <label>Number<input value={unit.number} onChange={(event) => {
                       const next = [...unitsForm];
                       next[index].number = event.target.value;
                       setUnitsForm(next);
-                    }} placeholder="12" /></label>
+                    }} /></label>
                   <label>Rent amount<input value={unit.rent} onChange={(event) => {
                       const next = [...unitsForm];
                       next[index].rent = event.target.value;
                       setUnitsForm(next);
-                    }} placeholder="840" /></label>
+                    }} /></label>
                   <label>Deposit<input value={unit.deposit} onChange={(event) => {
                       const next = [...unitsForm];
                       next[index].deposit = event.target.value;
                       setUnitsForm(next);
-                    }} placeholder="840" /></label>
+                    }} /></label>
                   <label>Lease months<input value={unit.leaseMonths} onChange={(event) => {
                       const next = [...unitsForm];
                       next[index].leaseMonths = event.target.value;
                       setUnitsForm(next);
-                    }} placeholder="12" /></label>
+                    }} /></label>
                   <label>Status<select value={unit.status} onChange={(event) => {
                       const next = [...unitsForm];
                       next[index].status = event.target.value;
@@ -1846,7 +1865,7 @@ function PropertiesPage({
                   });
                 }
                 setUnitsManagementStatus(`✓ ${unitsForm.filter((u) => (u.block || u.floor || u.number) && u.rent).length} units added successfully.`);
-                setUnitsForm([{ block: "", floor: "", number: "", rent: "", deposit: "", leaseMonths: "12", status: "vacant" }]);
+                setUnitsForm([{ block: "", floor: "", number: "", rent: "", deposit: "", leaseMonths: "", status: "vacant" }]);
                 setManagingPropertyId(null);
               } catch (error) {
                 setUnitsManagementStatus(error instanceof Error ? error.message : "Failed to add units");
@@ -1857,32 +1876,29 @@ function PropertiesPage({
           </article>
         )}
 
-        {role !== "Tenant" && (
+        {role !== "Tenant" && propertySection === "Listings" && (
           <article className="panel form-panel">
             <div className="panel-heading"><div><span>New property listing</span><h3>Professional listing setup</h3></div></div>
             <div className="form-grid">
-              <label>Name<input value={listingForm.name} onChange={(event) => setListingForm({ ...listingForm, name: event.target.value })} placeholder="Westlands Heights" /></label>
-              <label>Address<input value={listingForm.address} onChange={(event) => setListingForm({ ...listingForm, address: event.target.value })} placeholder="Waiyaki Way, Nairobi" /></label>
+              <label>Name<input value={listingForm.name} onChange={(event) => setListingForm({ ...listingForm, name: event.target.value })} /></label>
+              <label>Address<input value={listingForm.address} onChange={(event) => setListingForm({ ...listingForm, address: event.target.value })} /></label>
               <label>Property type<select value={listingForm.propertyType} onChange={(event) => setListingForm({ ...listingForm, propertyType: event.target.value })}>
                 <option value="Apartments">Apartments</option>
                 <option value="Business centre">Business centre</option>
                 <option value="Stalls">Stalls</option>
                 <option value="Mixed use">Mixed use</option>
               </select></label>
-              <label>Street<input value={listingForm.street} onChange={(event) => setListingForm({ ...listingForm, street: event.target.value })} placeholder="Waiyaki Way" /></label>
-              <label>Location<input value={listingForm.location} onChange={(event) => setListingForm({ ...listingForm, location: event.target.value })} placeholder="Westlands" /></label>
-              <label>Contact name<input value={listingForm.contactName} onChange={(event) => setListingForm({ ...listingForm, contactName: event.target.value })} placeholder="Property manager" /></label>
-              <label>Contact phone<input value={listingForm.contactPhone} onChange={(event) => setListingForm({ ...listingForm, contactPhone: event.target.value })} placeholder="+254700000102" /></label>
-              <label>Contact email<input value={listingForm.contactEmail} onChange={(event) => setListingForm({ ...listingForm, contactEmail: event.target.value })} placeholder="manager@rentflow.app" /></label>
-              <label>Electricity price<input value={listingForm.electricityPrice} onChange={(event) => setListingForm({ ...listingForm, electricityPrice: event.target.value })} placeholder="KES 25/unit" /></label>
-              <label>Garbage price<input value={listingForm.garbagePrice} onChange={(event) => setListingForm({ ...listingForm, garbagePrice: event.target.value })} placeholder="KES 4/unit" /></label>
-              <label>Water price<input value={listingForm.waterPrice} onChange={(event) => setListingForm({ ...listingForm, waterPrice: event.target.value })} placeholder="KES 8/unit" /></label>
-              <label>Electricity price<input value={listingForm.electricityPrice} onChange={(event) => setListingForm({ ...listingForm, electricityPrice: event.target.value })} placeholder="KES 25/unit" /></label>
-              <label>Garbage price<input value={listingForm.garbagePrice} onChange={(event) => setListingForm({ ...listingForm, garbagePrice: event.target.value })} placeholder="KES 4/unit" /></label>
-              <label>Water price<input value={listingForm.waterPrice} onChange={(event) => setListingForm({ ...listingForm, waterPrice: event.target.value })} placeholder="KES 8/unit" /></label>
-              <label>Contract fee<input value={listingForm.contractFee} onChange={(event) => setListingForm({ ...listingForm, contractFee: event.target.value })} placeholder="2200" /></label>
-              <label>Management quote<input value={listingForm.managementQuote} onChange={(event) => setListingForm({ ...listingForm, managementQuote: event.target.value })} placeholder="10% monthly" /></label>
-              <label>Valuation<input value={listingForm.valuation} onChange={(event) => setListingForm({ ...listingForm, valuation: event.target.value })} placeholder="4200000" /></label>
+              <label>Street<input value={listingForm.street} onChange={(event) => setListingForm({ ...listingForm, street: event.target.value })} /></label>
+              <label>Location<input value={listingForm.location} onChange={(event) => setListingForm({ ...listingForm, location: event.target.value })} /></label>
+              <label>Contact name<input value={listingForm.contactName} onChange={(event) => setListingForm({ ...listingForm, contactName: event.target.value })} /></label>
+              <label>Contact phone<input value={listingForm.contactPhone} onChange={(event) => setListingForm({ ...listingForm, contactPhone: event.target.value })} /></label>
+              <label>Contact email<input value={listingForm.contactEmail} onChange={(event) => setListingForm({ ...listingForm, contactEmail: event.target.value })} /></label>
+              <label>Electricity price<input value={listingForm.electricityPrice} onChange={(event) => setListingForm({ ...listingForm, electricityPrice: event.target.value })} /></label>
+              <label>Garbage price<input value={listingForm.garbagePrice} onChange={(event) => setListingForm({ ...listingForm, garbagePrice: event.target.value })} /></label>
+              <label>Water price<input value={listingForm.waterPrice} onChange={(event) => setListingForm({ ...listingForm, waterPrice: event.target.value })} /></label>
+              <label>Contract fee<input value={listingForm.contractFee} onChange={(event) => setListingForm({ ...listingForm, contractFee: event.target.value })} /></label>
+              <label>Management quote<input value={listingForm.managementQuote} onChange={(event) => setListingForm({ ...listingForm, managementQuote: event.target.value })} /></label>
+              <label>Valuation<input value={listingForm.valuation} onChange={(event) => setListingForm({ ...listingForm, valuation: event.target.value })} /></label>
             </div>
             <div className="unit-grid">
               {unitsForm.map((unit, index) => (
@@ -1891,32 +1907,32 @@ function PropertiesPage({
                       const next = [...unitsForm];
                       next[index].block = event.target.value;
                       setUnitsForm(next);
-                    }} placeholder="A" /></label>
+                    }} /></label>
                   <label>Floor<input value={unit.floor} onChange={(event) => {
                       const next = [...unitsForm];
                       next[index].floor = event.target.value;
                       setUnitsForm(next);
-                    }} placeholder="01" /></label>
+                    }} /></label>
                   <label>Number<input value={unit.number} onChange={(event) => {
                       const next = [...unitsForm];
                       next[index].number = event.target.value;
                       setUnitsForm(next);
-                    }} placeholder="12" /></label>
+                    }} /></label>
                   <label>Rent amount<input value={unit.rent} onChange={(event) => {
                       const next = [...unitsForm];
                       next[index].rent = event.target.value;
                       setUnitsForm(next);
-                    }} placeholder="840" /></label>
+                    }} /></label>
                   <label>Deposit<input value={unit.deposit} onChange={(event) => {
                       const next = [...unitsForm];
                       next[index].deposit = event.target.value;
                       setUnitsForm(next);
-                    }} placeholder="840" /></label>
+                    }} /></label>
                   <label>Lease months<input value={unit.leaseMonths} onChange={(event) => {
                       const next = [...unitsForm];
                       next[index].leaseMonths = event.target.value;
                       setUnitsForm(next);
-                    }} placeholder="12" /></label>
+                    }} /></label>
                   <label>Status<select value={unit.status} onChange={(event) => {
                       const next = [...unitsForm];
                       next[index].status = event.target.value;
@@ -1935,7 +1951,7 @@ function PropertiesPage({
           </article>
         )}
 
-        <PrivilegePanel role={role} />
+        {(role === "Tenant" || propertySection === "Portfolio") && <PrivilegePanel role={role} />}
       </article>
     </section>
   );
@@ -2017,7 +2033,7 @@ function PaymentsPage({ role, currency, payments, onMakePayment, onApprovePaymen
   }
 
   return (
-    <section className="content-grid">
+    <section className="content-grid payments-grid">
       <article className="panel wide-panel">
         <div className="panel-heading">
           <div><span>{role === "Tenant" ? "My payments" : "Collections"}</span><h3>{role === "Tenant" ? "Rent and receipts" : "Rent collection monitor"}</h3></div>
@@ -2137,7 +2153,7 @@ function PaymentsPage({ role, currency, payments, onMakePayment, onApprovePaymen
                 }}>Download receipt</button>
               </div>
             </div>
-          )) : <div className="table-row empty"><span>No payments available yet.</span></div>}
+          )) : <div className="table-row empty payment-empty-state"><span><strong>No payments yet</strong><small>New rent activity will appear here.</small></span></div>}
         </div>
       </article>
       <article className="panel payment-method-panel">
@@ -2155,10 +2171,10 @@ function PaymentsPage({ role, currency, payments, onMakePayment, onApprovePaymen
           ))}
         </div>
         {paymentMode === "bank" && (
-          <div className="bank-form">
-            <label>Bank name<input placeholder="Equity Bank" value={bankForm.bankName} onChange={(event) => setBankForm({ ...bankForm, bankName: event.target.value })} /></label>
-            <label>Account name<input placeholder="Amina Otieno" value={bankForm.accountName} onChange={(event) => setBankForm({ ...bankForm, accountName: event.target.value })} /></label>
-            <label>Account number<input placeholder="0123456789" value={bankForm.accountNumber} onChange={(event) => setBankForm({ ...bankForm, accountNumber: event.target.value })} /></label>
+          <div className="bank-form bank-details-form">
+            <label>Bank name<input value={bankForm.bankName} onChange={(event) => setBankForm({ ...bankForm, bankName: event.target.value })} /></label>
+            <label>Account name<input value={bankForm.accountName} onChange={(event) => setBankForm({ ...bankForm, accountName: event.target.value })} /></label>
+            <label>Account number<input value={bankForm.accountNumber} onChange={(event) => setBankForm({ ...bankForm, accountNumber: event.target.value })} /></label>
             <label>Branch / routing code<input placeholder="Optional" value={bankForm.routingNumber} onChange={(event) => setBankForm({ ...bankForm, routingNumber: event.target.value })} /></label>
             <button className="primary-action" onClick={handlePay}>{canPay ? `Debit ${formatMoney(2000, currency)}` : "Save bank route"}</button>
           </div>
@@ -2166,16 +2182,16 @@ function PaymentsPage({ role, currency, payments, onMakePayment, onApprovePaymen
         {(paymentMode === "mpesa" || paymentMode === "mobile_money") && (
           <div className="bank-form">
             <div className="method-note"><Smartphone /> Enter the mobile money phone number. A request will be sent for approval.</div>
-            <label>Phone number<input placeholder="+254700000101" value={mpesaPhone} onChange={(event) => setMpesaPhone(event.target.value)} /></label>
+            <label>Phone number<input value={mpesaPhone} onChange={(event) => setMpesaPhone(event.target.value)} /></label>
             <button className="primary-action" onClick={handlePay}>{canPay ? `Pay ${formatMoney(2000, currency)} via ${paymentMode === "mpesa" ? "M-Pesa" : "Airtel Money"}` : `Save ${paymentMode === "mpesa" ? "M-Pesa" : "Airtel Money"} route`}</button>
           </div>
         )}
         {paymentMode === "card" && (
           <div className="bank-form">
             <div className="method-note"><CreditCard /> Card payment opens a secure card form and tokenizes the card.</div>
-            <label>Card number<input placeholder="4111 1111 1111 1111" value={cardForm.number} onChange={(event) => setCardForm({ ...cardForm, number: event.target.value })} /></label>
+            <label>Card number<input value={cardForm.number} onChange={(event) => setCardForm({ ...cardForm, number: event.target.value })} /></label>
             <label>Expiry<input placeholder="MM/YY" value={cardForm.expiry} onChange={(event) => setCardForm({ ...cardForm, expiry: event.target.value })} /></label>
-            <label>CVC<input placeholder="123" value={cardForm.cvc} onChange={(event) => setCardForm({ ...cardForm, cvc: event.target.value })} /></label>
+            <label>CVC<input value={cardForm.cvc} onChange={(event) => setCardForm({ ...cardForm, cvc: event.target.value })} /></label>
             <button className="primary-action" onClick={handlePay}>{canPay ? `Pay ${formatMoney(2000, currency)} with card` : "Save card route"}</button>
           </div>
         )}
@@ -2308,7 +2324,7 @@ function MaintenancePage({ role, maintenanceData, onSubmitMaintenance, onUpdateM
                 <option value="resolved">Resolved</option>
               </select></label>
               <label>Assign worker<input value={ticketAction.assignedTo} onChange={(event) => setTicketAction({ ...ticketAction, assignedTo: event.target.value })} placeholder="Field technician or vendor" /></label>
-              <label>Vendor name<input value={ticketAction.vendorName} onChange={(event) => setTicketAction({ ...ticketAction, vendorName: event.target.value })} placeholder="Apex Plumbing, SecurePro" /></label>
+              <label>Vendor name<input value={ticketAction.vendorName} onChange={(event) => setTicketAction({ ...ticketAction, vendorName: event.target.value })} /></label>
               <label>Work notes<textarea rows={3} value={ticketAction.followUp} onChange={(event) => setTicketAction({ ...ticketAction, followUp: event.target.value })} placeholder="Add progress updates or completion notes." /></label>
               <button className="primary-action" onClick={applyTicketUpdate}>Save work order</button>
               {submitted && <p className="status-note">{submitted}</p>}
@@ -2342,7 +2358,7 @@ function MaintenancePage({ role, maintenanceData, onSubmitMaintenance, onUpdateM
       ) : (
         <article className="panel form-panel">
           <div className="panel-heading"><div><span>Submit maintenance</span><h3>New request</h3></div></div>
-          <label>Issue title<input placeholder="Kitchen sink leak" value={request.title} onChange={(event) => setRequest({ ...request, title: event.target.value })} /></label>
+          <label>Issue title<input value={request.title} onChange={(event) => setRequest({ ...request, title: event.target.value })} /></label>
           <label>Priority<select value={request.priority} onChange={(event) => setRequest({ ...request, priority: event.target.value })}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="emergency">Emergency</option></select></label>
           <label>Description<textarea placeholder="Describe the problem, location, and urgency." value={request.description} onChange={(event) => setRequest({ ...request, description: event.target.value })} /></label>
           <button className="primary-action" onClick={submitRequest}>Submit maintenance</button>
@@ -2719,11 +2735,11 @@ function SecurityPage({ role, securityRecords, securityEvents, properties, onAdd
       ) : (
         <article className="panel form-panel">
           <div className="panel-heading"><div><span>Add security contact</span><h3>Register agents and points</h3></div></div>
-          <label>Property name<input value={form.propertyName} onChange={(event) => setForm({ ...form, propertyName: event.target.value })} placeholder="Westlands Heights" /></label>
-          <label>Security company<input value={form.companyName} onChange={(event) => setForm({ ...form, companyName: event.target.value })} placeholder="Guardian Security Ltd." /></label>
-          <label>Agent name<input value={form.contactName} onChange={(event) => setForm({ ...form, contactName: event.target.value })} placeholder="Moses Kamau" /></label>
-          <label>Agent phone<input value={form.contactPhone} onChange={(event) => setForm({ ...form, contactPhone: event.target.value })} placeholder="+254700111222" /></label>
-          <label>Agent email<input value={form.contactEmail} onChange={(event) => setForm({ ...form, contactEmail: event.target.value })} placeholder="moses@guardian.co.ke" /></label>
+          <label>Property name<input value={form.propertyName} onChange={(event) => setForm({ ...form, propertyName: event.target.value })} /></label>
+          <label>Security company<input value={form.companyName} onChange={(event) => setForm({ ...form, companyName: event.target.value })} /></label>
+          <label>Agent name<input value={form.contactName} onChange={(event) => setForm({ ...form, contactName: event.target.value })} /></label>
+          <label>Agent phone<input value={form.contactPhone} onChange={(event) => setForm({ ...form, contactPhone: event.target.value })} /></label>
+          <label>Agent email<input value={form.contactEmail} onChange={(event) => setForm({ ...form, contactEmail: event.target.value })} /></label>
           <label>Location or gate point<input value={form.location} onChange={(event) => setForm({ ...form, location: event.target.value })} placeholder="Main gate" /></label>
           <label>Notes<textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} placeholder="Night patrols, emergency access details." /></label>
           <label>Instructions<textarea value={form.instructions} onChange={(event) => setForm({ ...form, instructions: event.target.value })} placeholder="Escalate unauthorized visitors immediately." /></label>
@@ -2914,9 +2930,9 @@ function AdminPage({ role, properties, accessToken }: { role: Role; properties: 
       {role === "Super Admin" && (
         <article className="panel wide-panel form-panel">
           <div className="panel-heading"><div><span>Management accounts</span><h3>Create property manager</h3></div><Users /></div>
-          <label>Name<input value={managementForm.name} onChange={(event) => setManagementForm({ ...managementForm, name: event.target.value })} placeholder="Jane Wambui" /></label>
-          <label>Email<input value={managementForm.email} onChange={(event) => setManagementForm({ ...managementForm, email: event.target.value })} placeholder="jane@rentflow.app" /></label>
-          <label>Phone<input value={managementForm.phone} onChange={(event) => setManagementForm({ ...managementForm, phone: event.target.value })} placeholder="+254700123456" /></label>
+          <label>Name<input value={managementForm.name} onChange={(event) => setManagementForm({ ...managementForm, name: event.target.value })} /></label>
+          <label>Email<input value={managementForm.email} onChange={(event) => setManagementForm({ ...managementForm, email: event.target.value })} /></label>
+          <label>Phone<input value={managementForm.phone} onChange={(event) => setManagementForm({ ...managementForm, phone: event.target.value })} /></label>
           <label>Initial password<input autoComplete="new-password" value={managementForm.password} onChange={(event) => setManagementForm({ ...managementForm, password: event.target.value })} placeholder="Set an initial password" /></label>
           <label>Property<select value={managementForm.propertyId} onChange={(event) => setManagementForm({ ...managementForm, propertyId: event.target.value })}>
             <option value="">Select a listing</option>
@@ -2934,12 +2950,12 @@ function AdminPage({ role, properties, accessToken }: { role: Role; properties: 
         </div>
         <label>Label<input placeholder="Main rent collection" value={paymentAccount.label} onChange={(event) => setPaymentAccount({ ...paymentAccount, label: event.target.value })} /></label>
         {paymentAccount.type === "mpesa" ? (
-          <label>M-Pesa paybill or till<input placeholder="123456" value={paymentAccount.mpesaPaybill} onChange={(event) => setPaymentAccount({ ...paymentAccount, mpesaPaybill: event.target.value })} /></label>
+          <label>M-Pesa paybill or till<input value={paymentAccount.mpesaPaybill} onChange={(event) => setPaymentAccount({ ...paymentAccount, mpesaPaybill: event.target.value })} /></label>
         ) : (
           <>
-            <label>Bank name<input placeholder="Equity Bank" value={paymentAccount.bankName} onChange={(event) => setPaymentAccount({ ...paymentAccount, bankName: event.target.value })} /></label>
-            <label>Account name<input placeholder="RentFlow Holdings" value={paymentAccount.accountName} onChange={(event) => setPaymentAccount({ ...paymentAccount, accountName: event.target.value })} /></label>
-            <label>Account number<input placeholder="0123456789" value={paymentAccount.accountNumber} onChange={(event) => setPaymentAccount({ ...paymentAccount, accountNumber: event.target.value })} /></label>
+            <label>Bank name<input value={paymentAccount.bankName} onChange={(event) => setPaymentAccount({ ...paymentAccount, bankName: event.target.value })} /></label>
+            <label>Account name<input value={paymentAccount.accountName} onChange={(event) => setPaymentAccount({ ...paymentAccount, accountName: event.target.value })} /></label>
+            <label>Account number<input value={paymentAccount.accountNumber} onChange={(event) => setPaymentAccount({ ...paymentAccount, accountNumber: event.target.value })} /></label>
           </>
         )}
         <button className="primary-action" onClick={savePaymentAccount}>Save payment method</button>
@@ -3056,7 +3072,7 @@ function TabContent({
   if (activeTab === "Properties") return <PropertiesPage role={role} currency={currency} properties={properties} units={units} tenants={tenants} expenses={expenses} onCreateListing={onCreateListing} onCreateUnit={onCreateUnit} onCreateTenant={onCreateTenant} onUpdateUnit={onUpdateUnit} onRecordExpense={onRecordExpense} onUploadAgreementTemplate={onUploadAgreementTemplate} onGenerateLeaseDocuments={onGenerateLeaseDocuments} />;
   if (activeTab === "Payments") return <PaymentsPage role={role} currency={currency} payments={payments} onMakePayment={onMakePayment} onApprovePayment={onApprovePayment} />;
   if (activeTab === "Maintenance") return <MaintenancePage role={role} maintenanceData={maintenanceData} onSubmitMaintenance={onSubmitMaintenance} onUpdateMaintenance={onUpdateMaintenance} />;
-  if (activeTab === "Messaging") return <section className="messaging-grid"><MessagingCenter role={role} threads={threads} messages={messages} notifications={notifications} onLoadThread={onLoadThread} onSendMessage={onSendMessage} onSendPushAlert={onSendPushAlert} /><NoticesPage role={role} notifications={notifications} properties={properties} onSendNotice={onSendNotice} /></section>;
+  if (activeTab === "Messaging") return <section className="messaging-grid"><MessagingCenter role={role} threads={threads} messages={messages} notifications={notifications} onLoadThread={onLoadThread} onSendMessage={onSendMessage} /><NoticesPage role={role} notifications={notifications} properties={properties} onSendNotice={onSendNotice} /></section>;
   if (activeTab === "Notices") return <NoticesPage role={role} notifications={notifications} properties={properties} onSendNotice={onSendNotice} />;
   if (activeTab === "Visitors") return <VisitorsPage records={visitorRecords} onCheckIn={onCheckInVisitor} onCheckOut={onCheckOutVisitor} />;
   if (activeTab === "Lease") return role === "Tenant"
@@ -3142,10 +3158,15 @@ function PasswordChangeForm({ onSubmit, error }: { onSubmit: (payload: { current
         <input autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} type="password" placeholder="New password" />
       </label>
       <label>
+  const [loginFieldsActive, setLoginFieldsActive] = useState(false);
         Confirm password
         <input autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} type="password" placeholder="Confirm new password" />
       </label>
       {status && <p className="status-note error">{status}</p>}
+  useEffect(() => {
+    setLoginFieldsActive(false);
+  }, [mode]);
+
       {error && <p className="status-note error">{error}</p>}
       <button className="primary-cta" onClick={submit} disabled={loading}>{loading ? "Updating..." : "Update password"}</button>
     </>
@@ -3245,11 +3266,11 @@ function AuthPage({ mode, onMode, onLogin, onSignup, onLegal, error, loading }: 
         <form autoComplete="off" onSubmit={(event) => { event.preventDefault(); submit(); }}>
         <label>
           Email
-          <input autoComplete="off" name="rentflow-login-email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" />
+          <input autoComplete="off" name="rentflow-login-email" readOnly={mode === "login" && !loginFieldsActive} onFocus={() => setLoginFieldsActive(true)} value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" />
         </label>
         <label>
           Password
-          <input autoComplete="new-password" name="rentflow-login-password" value={password} onChange={(event) => setPassword(event.target.value)} type="password" placeholder="Enter password" />
+          <input autoComplete="off" name="rentflow-login-password" readOnly={mode === "login" && !loginFieldsActive} onFocus={() => setLoginFieldsActive(true)} value={password} onChange={(event) => setPassword(event.target.value)} type="password" placeholder="Enter password" />
         </label>
         {mode === "signup" && (
           <>
