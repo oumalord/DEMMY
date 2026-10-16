@@ -668,7 +668,7 @@ function TenantHomeDashboard({ user, units, payments, maintenance, notifications
         <div>
           <span className="tenant-eyebrow">RentFlow · Tenant home</span>
           <h2>Welcome back{user?.name ? `, ${user.name.split(" ")[0]}` : ""}</h2>
-          <p>{unit ? `Unit ${unit.label}` : "No unit is linked to this account yet."}</p>
+          <p>{unit ? `Unit ${unit.label}` : "No unit is linked to this account yet."} · Today, {now.toLocaleDateString("en", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</p>
         </div>
         {unit && <div className="tenant-balance-highlight"><span>Current rent balance</span><strong>{formatMoney(balance, currency)}</strong><small>{balance > 0 ? "Based on this month’s recorded payments" : "No outstanding rent balance recorded"}</small></div>}
         <div className="tenant-home-actions">
