@@ -3935,18 +3935,6 @@ body {
   box-shadow: none;
 }
 
-.tenant-app .brand {
-  gap: 11px;
-  padding: 0 8px;
-}
-
-.tenant-app .brand-mark {
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
-  background: #1556c7;
-}
-
 .tenant-app .brand strong {
   color: #111c2f;
   font-size: 1.1rem;
@@ -4040,6 +4028,130 @@ body {
   border-radius: 50%;
   background: #ed3439;
   content: "";
+}
+
+.tenant-app .topbar-controls .icon-button[aria-label="Notifications"] {
+  border-color: #e4e8ef;
+}
+
+.tenant-app .tenant-profile-button {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid #d9e5fb;
+  border-radius: 50%;
+  color: #174c9c;
+  background: #dce9ff;
+  font-size: .68rem;
+  font-weight: 750;
+}
+
+.tenant-app .panel,
+.tenant-app .stat-card {
+  border-color: #e1e7f0;
+  color: #17243a;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(24, 48, 88, .06);
+}
+
+.tenant-app .panel-heading h3,
+.tenant-app .panel h3,
+.tenant-app .panel h4 {
+  color: #17243a;
+}
+
+.tenant-app .panel-heading > div > span {
+  color: #2464d5;
+}
+
+.tenant-app .payments-grid .panel-heading button {
+  min-height: 42px;
+  padding: 0 17px;
+  border: 1px solid #1556c7;
+  border-radius: 9px;
+  color: #fff;
+  background: #1556c7;
+  font-weight: 700;
+}
+
+.tenant-app .payments-grid .panel-heading button:hover,
+.tenant-app .payments-grid .payment-submit-button.is-ready:hover {
+  background: #1048ac;
+}
+
+.tenant-app .payments-grid .payment-empty-state {
+  border-color: #b9cdf1;
+  color: #17243a;
+  background: #f1f6ff;
+}
+
+.tenant-app .payment-empty-state strong {
+  color: #17243a;
+}
+
+.tenant-app .payment-empty-state small {
+  color: #66748a;
+}
+
+.tenant-app .payments-grid .payment-mode-grid button {
+  border-color: #dce4f0;
+  color: #34445e;
+  background: #fff;
+}
+
+.tenant-app .payments-grid .payment-mode-grid button:hover {
+  border-color: #9eb9ea;
+  background: #f4f7fd;
+}
+
+.tenant-app .payments-grid .payment-mode-grid button.selected {
+  border-color: #1556c7;
+  color: #fff;
+  background: #1556c7;
+}
+
+.tenant-app .payments-grid .payment-submit-button {
+  border-color: #ccd6e4;
+  color: #66748a;
+  background: #eef2f7;
+}
+
+.tenant-app .payments-grid .payment-submit-button.is-ready {
+  border-color: #1556c7;
+  background: #1556c7;
+  box-shadow: 0 5px 14px rgba(21, 86, 199, .22);
+}
+
+.tenant-app .payments-grid .bank-form input {
+  border-color: #d8e0eb;
+  color: #17243a;
+  background: #fff;
+}
+
+.tenant-app .payments-grid .bank-form input:focus {
+  border-color: #2464d5;
+  box-shadow: 0 0 0 3px rgba(36, 100, 213, .13);
+}
+
+.tenant-app .payments-grid .method-note,
+.tenant-app .payments-grid .status-note {
+  color: #53627a;
+}
+
+.tenant-app .tenant-card-status.is-unlinked {
+  color: #a3471d;
+  background: #fff1e8;
+}
+
+.tenant-app .tenant-card-status.is-unlinked i {
+  background: #e56a32;
+}
+
+.tenant-app .tenant-card-amount.is-unlinked {
+  max-width: 100%;
+  color: #53627a;
+  font-size: 1.1rem;
 }
 
 .tenant-app .tenant-home {
@@ -4648,8 +4760,7 @@ body {
     gap: 6px;
   }
 
-  .tenant-app .topbar-controls .currency-switcher,
-  .tenant-app .topbar-controls .icon-button[aria-label="Toggle theme"] {
+  .tenant-app .topbar-controls .currency-switcher {
     display: none;
   }
 
@@ -4854,4 +4965,962 @@ body {
   .tenant-event-details strong {
     white-space: normal;
   }
+}
+
+.tenant-activity-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(260px, .8fr);
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.tenant-activity-card {
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid #e1e7f0;
+  border-radius: 16px;
+  color: #17243a;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(24, 48, 88, .045);
+}
+
+.tenant-history-card {
+  grid-row: span 2;
+}
+
+.tenant-activity-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.tenant-activity-heading > div > span {
+  color: #2464d5;
+  font-size: .62rem;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.tenant-activity-heading h3 {
+  margin: 5px 0 0;
+  color: #17243a;
+  font-size: 1rem;
+}
+
+.tenant-activity-heading > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 0;
+  border: 0;
+  color: #1556c7;
+  background: transparent;
+  font-size: .69rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.tenant-activity-heading > button svg {
+  width: 15px;
+  height: 15px;
+}
+
+.tenant-activity-empty {
+  display: grid;
+  min-height: 120px;
+  margin: 0;
+  place-items: center;
+  color: #69778d;
+  font-size: .82rem;
+  text-align: center;
+}
+
+.tenant-rent-breakdown {
+  display: grid;
+  gap: 0;
+  margin: 8px 0 0;
+}
+
+.tenant-rent-breakdown > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid #edf0f5;
+}
+
+.tenant-rent-breakdown > div:last-child {
+  border-bottom: 0;
+}
+
+.tenant-rent-breakdown dt {
+  color: #69778d;
+  font-size: .78rem;
+}
+
+.tenant-rent-breakdown dd {
+  margin: 0;
+  color: #17243a;
+  font-size: .8rem;
+  font-weight: 700;
+  text-align: right;
+}
+
+.tenant-history-row {
+  display: flex;
+  min-height: 52px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid #edf0f5;
+}
+
+.tenant-history-row:last-child {
+  border-bottom: 0;
+}
+
+.tenant-history-row > span:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.tenant-history-row strong {
+  color: #17243a;
+  font-size: .78rem;
+}
+
+.tenant-history-row small {
+  color: #8793a5;
+  font-size: .65rem;
+}
+
+.tenant-payment-state,
+.tenant-ticket-state {
+  flex: 0 0 auto;
+  color: #2464d5;
+  font-size: .67rem;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.tenant-payment-state.paid,
+.tenant-payment-state.approved {
+  color: #19815d;
+}
+
+.tenant-payment-state.pending,
+.tenant-payment-state.partial {
+  color: #bd5a19;
+}
+
+.tenant-payment-state.overdue,
+.tenant-payment-state.failed,
+.tenant-payment-state.rejected {
+  color: #d33439;
+}
+
+.tenant-app .payments-grid .table-row {
+  border-color: #e6ebf3;
+  color: #17243a;
+  background: #f8faff;
+}
+
+.tenant-app .payments-grid .table-row > span,
+.tenant-app .payments-grid .table-row > strong {
+  color: #17243a;
+}
+
+.tenant-app .payments-grid .table-row small {
+  color: #728097;
+}
+
+.tenant-app .payments-grid .table-row em {
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: .68rem;
+  font-weight: 750;
+  text-transform: capitalize;
+}
+
+.tenant-app .payments-grid .table-row em.paid,
+.tenant-app .payments-grid .table-row em.approved {
+  color: #14734f;
+  background: #e4f7ee;
+}
+
+.tenant-app .payments-grid .table-row em.pending,
+.tenant-app .payments-grid .table-row em.partial {
+  color: #a84c15;
+  background: #fff2e4;
+}
+
+.tenant-app .payments-grid .table-row em.overdue,
+.tenant-app .payments-grid .table-row em.failed,
+.tenant-app .payments-grid .table-row em.rejected {
+  color: #c42832;
+  background: #ffebed;
+}
+
+@media (max-width: 820px) {
+  .tenant-activity-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 11px;
+  }
+
+  .tenant-history-card {
+    grid-row: auto;
+  }
+
+  .tenant-activity-card {
+    padding: 16px;
+    border-radius: 14px;
+  }
+
+  .tenant-app .tenant-profile-button {
+    width: 34px;
+    height: 34px;
+    flex: 0 0 34px;
+  }
+
+  .tenant-app .mobile-bottom-nav > button.selected,
+  .tenant-app .mobile-bottom-nav .mobile-more-trigger.selected,
+  .tenant-app .mobile-bottom-nav .mobile-more-trigger[aria-expanded="true"] {
+    color: #1556c7;
+    background: #edf3ff;
+  }
+
+  .tenant-app .mobile-bottom-nav .mobile-more-trigger::after {
+    content: none;
+  }
+}
+
+.tenant-app.dark {
+  color: #e8eef8;
+  background: #0c1528;
+}
+
+.tenant-app.dark .sidebar {
+  border-right-color: #26344b;
+  background: #111d32;
+}
+
+.tenant-app.dark .brand strong,
+.tenant-app.dark .topbar h1,
+.tenant-app.dark .tenant-glance-heading h2 {
+  color: #f3f6fb;
+}
+
+.tenant-app.dark .brand div > span,
+.tenant-app.dark .topbar p,
+.tenant-app.dark .tenant-glance-heading p {
+  color: #aab8cc;
+}
+
+.tenant-app.dark .sidebar nav button {
+  color: #b8c4d7;
+}
+
+.tenant-app.dark .sidebar nav button.active,
+.tenant-app.dark .sidebar nav button:hover {
+  color: #a9c6ff;
+  background: #1b3154;
+}
+
+.tenant-app.dark .currency-switcher {
+  border-color: #2b3a53;
+  background: #14223a;
+}
+
+.tenant-app.dark .currency-switcher button {
+  color: #b8c4d7;
+}
+
+.tenant-app.dark .currency-switcher button.selected {
+  color: #c6d8ff;
+  background: #20385f;
+}
+
+.tenant-app.dark .topbar-controls .icon-button {
+  border-color: #2b3a53;
+  color: #c5d1e4;
+  background: #15233b;
+}
+
+.tenant-app.dark .tenant-profile-button {
+  border-color: #38527c;
+  color: #d7e4ff;
+  background: #263f68;
+}
+
+.tenant-app.dark .tenant-event-details,
+.tenant-app.dark .tenant-overview-card,
+.tenant-app.dark .tenant-activity-card,
+.tenant-app.dark .tenant-latest-message,
+.tenant-app.dark .panel,
+.tenant-app.dark .stat-card {
+  border-color: #293850;
+  color: #e8eef8;
+  background: #142138;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .17);
+}
+
+.tenant-app.dark .tenant-event-details > div {
+  border-color: #293850;
+}
+
+.tenant-app.dark .tenant-event-details strong,
+.tenant-app.dark .tenant-card-amount,
+.tenant-app.dark .tenant-maintenance-title,
+.tenant-app.dark .tenant-section-heading h3,
+.tenant-app.dark .tenant-activity-heading h3,
+.tenant-app.dark .tenant-latest-message > div > strong,
+.tenant-app.dark .tenant-rent-breakdown dd,
+.tenant-app.dark .tenant-history-row strong,
+.tenant-app.dark .panel-heading h3,
+.tenant-app.dark .panel h3 {
+  color: #f1f5fb;
+}
+
+.tenant-app.dark .tenant-event-details small,
+.tenant-app.dark .tenant-payment-meta,
+.tenant-app.dark .tenant-payment-meta span:last-child,
+.tenant-app.dark .tenant-maintenance-card > p,
+.tenant-app.dark .tenant-latest-message p,
+.tenant-app.dark .tenant-rent-breakdown dt,
+.tenant-app.dark .tenant-history-row small,
+.tenant-app.dark .tenant-activity-empty {
+  color: #aab8cc;
+}
+
+.tenant-app.dark .tenant-rent-breakdown > div,
+.tenant-app.dark .tenant-history-row {
+  border-color: #293850;
+}
+
+.tenant-app.dark .tenant-outline-button {
+  border-color: #3a4a64;
+  color: #e2eaf5;
+  background: #1b2b44;
+}
+
+.tenant-app.dark .tenant-message-icon,
+.tenant-app.dark .tenant-detail-icon {
+  color: #9bbaff;
+  background: #20385f;
+}
+
+.tenant-app.dark .tenant-detail-icon.tenant-location-icon {
+  color: #ff9ba0;
+  background: #482a39;
+}
+
+.tenant-app.dark .payments-grid .payment-empty-state {
+  border-color: #395278;
+  color: #e8eef8;
+  background: #192b47;
+}
+
+.tenant-app.dark .payment-empty-state strong {
+  color: #f1f5fb;
+}
+
+.tenant-app.dark .payment-empty-state small,
+.tenant-app.dark .payments-grid .bank-form label,
+.tenant-app.dark .payments-grid .method-note,
+.tenant-app.dark .payments-grid .status-note {
+  color: #bac7da;
+}
+
+.tenant-app.dark .payments-grid .payment-mode-grid button,
+.tenant-app.dark .tenant-app .payments-grid .payment-mode-grid button {
+  border-color: #3a4a64;
+  color: #e2eaf5;
+  background: #1b2b44;
+}
+
+.tenant-app.dark .payments-grid .payment-mode-grid button.selected {
+  border-color: #3677e6;
+  color: #fff;
+  background: #1556c7;
+}
+
+.tenant-app.dark .payments-grid .bank-form input {
+  border-color: #3a4a64;
+  color: #f1f5fb;
+  background: #111d32;
+}
+
+.tenant-app.dark .payments-grid .table-row {
+  border-color: #293850;
+  color: #e8eef8;
+  background: #192b47;
+}
+
+.tenant-app.dark .payments-grid .table-row > span,
+.tenant-app.dark .payments-grid .table-row > strong {
+  color: #f1f5fb;
+}
+
+.tenant-app.dark .payments-grid .table-row small {
+  color: #aab8cc;
+}
+
+@media (max-width: 820px) {
+  .tenant-app.dark .mobile-bottom-nav {
+    border-top-color: #293850;
+    background: rgba(17, 29, 50, .97);
+    box-shadow: 0 -4px 18px rgba(0, 0, 0, .22);
+  }
+
+  .tenant-app.dark .mobile-bottom-nav button {
+    color: #bac7da;
+  }
+
+  .tenant-app.dark .mobile-bottom-nav > button.selected,
+  .tenant-app.dark .mobile-bottom-nav .mobile-more-trigger.selected,
+  .tenant-app.dark .mobile-bottom-nav .mobile-more-trigger[aria-expanded="true"] {
+    color: #c6d8ff;
+    background: #20385f;
+  }
+}
+
+.app.tenant-app {
+  --rentflow-ink: #17243a;
+  --rentflow-muted: #69778d;
+  --rentflow-line: #e1e7f0;
+  --rentflow-green: #2464d5;
+  --rentflow-green-dark: #1556c7;
+}
+
+.tenant-app .primary-action,
+.tenant-app .report-grid button,
+.tenant-app .receipt-row button,
+.tenant-app .lease-document-panel > button {
+  border-color: #1556c7;
+  color: #fff;
+  background: #1556c7;
+  box-shadow: 0 5px 14px rgba(21, 86, 199, .16);
+}
+.tenant-app .panel-heading button:not(.icon-button) {
+  border: 1px solid #d8e3f4;
+  color: #1556c7;
+  background: #edf3ff;
+}
+.tenant-app .panel-heading button:not(.icon-button):hover {
+  border-color: #b5c9eb;
+  background: #e3edff;
+}
+
+.tenant-app .primary-action:hover,
+.tenant-app .report-grid button:hover,
+.tenant-app .receipt-row button:hover,
+.tenant-app .lease-document-panel > button:hover {
+  background: #1048ac;
+}
+
+.tenant-app .content-grid > .panel,
+.tenant-app .messaging-panel {
+  border-color: #e1e7f0;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(24, 48, 88, .06);
+}
+
+.tenant-app .panel-heading > svg,
+.tenant-app .security-grid svg,
+.tenant-app .ticket > svg {
+  color: #2464d5;
+}
+
+.tenant-app .panel p,
+.tenant-app .panel label,
+.tenant-app .muted-copy,
+.tenant-app .status-note {
+  color: #53627a;
+}
+
+.tenant-app .panel input:not([type="file"]),
+.tenant-app .panel textarea,
+.tenant-app .panel select {
+  border-color: #d8e0eb;
+  border-radius: 8px;
+  color: #17243a;
+  background: #fff;
+}
+
+.tenant-app .panel input:focus,
+.tenant-app .panel textarea:focus,
+.tenant-app .panel select:focus {
+  border-color: #2464d5;
+  box-shadow: 0 0 0 3px rgba(36, 100, 213, .13);
+}
+
+.tenant-app .ticket,
+.tenant-app .ticket.empty {
+  border-color: #e1e7f0;
+  color: #34445e;
+  background: #f8faff;
+}
+
+.tenant-app .ticket:hover,
+.tenant-app .ticket.active-ticket {
+  border-color: #adc4f0;
+  background: #edf3ff;
+}
+
+.tenant-app .ticket strong,
+.tenant-app .ticket-meta,
+.tenant-app .ticket-meta em {
+  color: #17243a;
+}
+
+.tenant-app .ticket span,
+.tenant-app .ticket small {
+  color: #69778d;
+}
+
+.tenant-app .notice-folder-tabs {
+  border-color: #dfe7f2;
+  background: #f1f6ff;
+}
+
+.tenant-app .notice-folder-tabs button.selected {
+  color: #fff;
+  background: #1556c7;
+}
+
+.tenant-app .notice-folder {
+  border-color: #e1e7f0;
+}
+
+.tenant-app .notice-folder-heading {
+  color: #17243a;
+  background: #f4f7fc;
+}
+
+.tenant-app .notice-folder-heading::after {
+  border-color: #1556c7;
+}
+
+.tenant-app .notice-folder-heading > span,
+.tenant-app .notice-entry-meta small,
+.tenant-app .notice-list .notice-entry-body,
+.tenant-app .notice-list .notice-empty p {
+  color: #69778d;
+}
+
+.tenant-app .notice-list .notice-entry {
+  border-color: #e8edf5;
+  color: #17243a;
+}
+
+.tenant-app .notice-entry-title {
+  color: #17243a;
+}
+
+.tenant-app .notice-channel-push {
+  color: #174c9c;
+  background: #e7efff;
+}
+
+.tenant-app .notice-attachment a {
+  background: #1556c7;
+}
+
+.tenant-app .chat-sidebar,
+.tenant-app .chat-window,
+.tenant-app .chat-context {
+  border-color: #e1e7f0;
+  color: #17243a;
+  background: #fff;
+}
+
+.tenant-app .chat-title h3,
+.tenant-app .chat-header h3,
+.tenant-app .chat-context h3,
+.tenant-app .thread strong,
+.tenant-app .message-bubble strong {
+  color: #17243a;
+}
+
+.tenant-app .chat-title span,
+.tenant-app .chat-header span,
+.tenant-app .chat-context > span,
+.tenant-app .thread small,
+.tenant-app .thread em {
+  color: #69778d;
+}
+
+.tenant-app .chat-title button,
+.tenant-app .chat-tools button,
+.tenant-app .composer button {
+  border-color: #d8e3f4;
+  color: #1556c7;
+  background: #edf3ff;
+}
+.tenant-app .chat-filter > button {
+  border-color: #d8e3f4;
+  color: #1556c7;
+  background: #edf3ff;
+}
+.tenant-app .chat-filter > button.selected {
+  border-color: #1556c7;
+  color: #fff;
+  background: #1556c7;
+}
+
+.tenant-app .thread,
+.tenant-app .chat-context div {
+  border-color: #e1e7f0;
+  color: #17243a;
+  background: #f8faff;
+}
+
+.tenant-app .thread:hover,
+.tenant-app .thread.active-thread {
+  border-color: #adc4f0;
+  color: #17243a;
+  background: #edf3ff;
+}
+
+.tenant-app .avatar-stack,
+.tenant-app .thread b {
+  color: #fff;
+  background: #2464d5;
+}
+
+.tenant-app .chat-header,
+.tenant-app .composer {
+  border-color: #e1e7f0;
+}
+
+.tenant-app .message-feed {
+  background: #f4f7fc;
+}
+
+.tenant-app .message-bubble,
+.tenant-app .message-bubble.mine {
+  border-color: #e1e7f0;
+  color: #17243a;
+  background: #fff;
+  box-shadow: 0 3px 10px rgba(24, 48, 88, .06);
+}
+
+.tenant-app .message-bubble.mine {
+  border-color: #b8cdf3;
+  background: #eaf1ff;
+}
+.tenant-app .notice-card {
+  border-color: #c8d8f4;
+  color: #174c9c;
+  background: linear-gradient(135deg, #edf3ff, #e1ebff);
+}
+.tenant-app .notice-card span {
+  color: #536b91;
+}
+
+.tenant-app .message-bubble p,
+.tenant-app .message-bubble small {
+  color: #34445e;
+}
+
+.tenant-app .composer input,
+.tenant-app .push-alert-input {
+  border-color: #d8e0eb;
+  color: #17243a;
+  background: #fff;
+}
+
+.tenant-app .composer .send-button,
+.tenant-app .chat-tools button.is-pinned {
+  border-color: #1556c7;
+  color: #fff !important;
+  background: #1556c7 !important;
+}
+
+.tenant-app .pinned-notice-banner,
+.tenant-app .chat-action-status {
+  border-color: #d8e3f4;
+  color: #174c9c;
+  background: #edf3ff;
+}
+
+.tenant-app .pinned-notice-banner strong,
+.tenant-app .pinned-notice-banner > svg {
+  color: #1556c7;
+}
+
+.tenant-app .lease-details-grid > div,
+.tenant-app .lease-preview-card {
+  border-color: #e1e7f0;
+  color: #17243a;
+  background: #f8faff;
+}
+
+.tenant-app .lease-details-grid span,
+.tenant-app .lease-preview-card > span {
+  color: #69778d;
+}
+
+.tenant-app .lease-details-grid strong,
+.tenant-app .lease-preview-card strong {
+  color: #17243a;
+}
+
+.tenant-app .lease-document-preview {
+  border-color: #dbe4f1;
+  color: #34445e;
+  background: #f6f8fc;
+}
+
+.tenant-app .report-grid button {
+  border-color: #dce5f3;
+  color: #174c9c;
+  background: #f2f6ff;
+  box-shadow: none;
+}
+
+.tenant-app .report-grid button svg {
+  color: #2464d5;
+}
+
+.tenant-app .report-grid button span {
+  color: #69778d;
+}
+
+.tenant-app .receipt-row {
+  border-color: #e1e7f0;
+  background: #f8faff;
+}
+
+.tenant-app .receipt-row strong,
+.tenant-app .receipt-row b {
+  color: #17243a;
+}
+
+.tenant-app .receipt-row small {
+  color: #69778d;
+}
+
+.tenant-app .security-grid div {
+  border-color: #dce5f3;
+  color: #174c9c;
+  background: #f2f6ff;
+}
+
+.tenant-app .security-grid div svg {
+  color: #2464d5;
+}
+
+.tenant-app .security-grid small {
+  color: #16845d;
+}
+
+.tenant-app .profile-large-avatar {
+  color: #fff;
+  background: linear-gradient(135deg, #2464d5, #173d82);
+}
+
+.tenant-app .profile-card > span,
+.tenant-app .profile-details small {
+  color: #69778d;
+}
+
+.tenant-app .profile-details div {
+  border-color: #e1e7f0;
+  background: #f8faff;
+}
+
+.tenant-app .profile-details strong {
+  color: #17243a;
+}
+
+.tenant-app .mobile-more-menu button.selected,
+.tenant-app .mobile-more-menu button:hover {
+  color: #1556c7;
+  background: #edf3ff;
+}
+
+.tenant-app.dark {
+  --rentflow-ink: #f1f5fb;
+  --rentflow-muted: #aab8cc;
+  --rentflow-line: #293850;
+  --rentflow-green: #77a7ff;
+  --rentflow-green-dark: #4f83e8;
+}
+
+.tenant-app.dark .panel p,
+.tenant-app.dark .panel label,
+.tenant-app.dark .muted-copy,
+.tenant-app.dark .status-note,
+.tenant-app.dark .ticket span,
+.tenant-app.dark .ticket small,
+.tenant-app.dark .notice-folder-heading > span,
+.tenant-app.dark .notice-entry-meta small,
+.tenant-app.dark .notice-list .notice-entry-body,
+.tenant-app.dark .profile-card > span,
+.tenant-app.dark .profile-details small {
+  color: #aab8cc;
+}
+
+.tenant-app.dark .panel input:not([type="file"]),
+.tenant-app.dark .panel textarea,
+.tenant-app.dark .panel select,
+.tenant-app.dark .composer input,
+.tenant-app.dark .push-alert-input {
+  border-color: #3a4a64;
+  color: #f1f5fb;
+  background: #111d32;
+}
+
+.tenant-app.dark .ticket,
+.tenant-app.dark .ticket.empty,
+.tenant-app.dark .notice-folder,
+.tenant-app.dark .notice-list,
+.tenant-app.dark .notice-list .notice-entry,
+.tenant-app.dark .thread,
+.tenant-app.dark .chat-context div,
+.tenant-app.dark .lease-details-grid > div,
+.tenant-app.dark .lease-preview-card,
+.tenant-app.dark .lease-document-preview,
+.tenant-app.dark .receipt-row,
+.tenant-app.dark .profile-details div,
+.tenant-app.dark .security-grid div,
+.tenant-app.dark .report-grid button {
+  border-color: #293850;
+  color: #e8eef8;
+  background: #192b47;
+}
+
+.tenant-app.dark .ticket:hover,
+.tenant-app.dark .ticket.active-ticket,
+.tenant-app.dark .thread:hover,
+.tenant-app.dark .thread.active-thread {
+  border-color: #42649d;
+  color: #f1f5fb;
+  background: #20385f;
+}
+
+.tenant-app.dark .ticket strong,
+.tenant-app.dark .ticket-meta,
+.tenant-app.dark .ticket-meta em,
+.tenant-app.dark .notice-entry-title,
+.tenant-app.dark .notice-folder-heading,
+.tenant-app.dark .thread strong,
+.tenant-app.dark .chat-title h3,
+.tenant-app.dark .chat-header h3,
+.tenant-app.dark .chat-context h3,
+.tenant-app.dark .message-bubble strong,
+.tenant-app.dark .message-bubble p,
+.tenant-app.dark .lease-details-grid strong,
+.tenant-app.dark .lease-preview-card strong,
+.tenant-app.dark .receipt-row strong,
+.tenant-app.dark .receipt-row b,
+.tenant-app.dark .profile-details strong {
+  color: #f1f5fb;
+}
+
+.tenant-app.dark .notice-folder-heading,
+.tenant-app.dark .notice-folder-tabs,
+.tenant-app.dark .chat-sidebar,
+.tenant-app.dark .chat-window,
+.tenant-app.dark .chat-context,
+.tenant-app.dark .message-feed,
+.tenant-app.dark .composer,
+.tenant-app.dark .chat-header {
+  border-color: #293850;
+  color: #e8eef8;
+  background: #142138;
+}
+
+.tenant-app.dark .notice-folder-tabs button,
+.tenant-app.dark .notice-folder-tabs button.selected {
+  color: #fff;
+  background: #264779;
+}
+
+.tenant-app.dark .notice-channel-push,
+.tenant-app.dark .chat-title button,
+.tenant-app.dark .chat-tools button,
+.tenant-app.dark .composer button,
+.tenant-app.dark .mobile-more-menu button.selected,
+.tenant-app.dark .mobile-more-menu button:hover {
+  color: #c6d8ff;
+  background: #20385f;
+}
+
+.tenant-app.dark .avatar-stack,
+.tenant-app.dark .thread b,
+.tenant-app.dark .composer .send-button,
+.tenant-app.dark .chat-tools button.is-pinned,
+.tenant-app.dark .notice-attachment a {
+  color: #fff !important;
+  background: #2464d5 !important;
+}
+
+.tenant-app.dark .message-bubble,
+.tenant-app.dark .message-bubble.mine {
+  border-color: #293850;
+  color: #f1f5fb;
+  background: #192b47;
+}
+
+.tenant-app.dark .message-bubble.mine,
+.tenant-app.dark .pinned-notice-banner,
+.tenant-app.dark .chat-action-status {
+  border-color: #38547f;
+  color: #d7e4ff;
+  background: #20385f;
+}
+
+.tenant-app.dark .lease-details-grid span,
+.tenant-app.dark .lease-preview-card > span,
+.tenant-app.dark .receipt-row small,
+.tenant-app.dark .report-grid button span {
+  color: #aab8cc;
+}
+
+.tenant-app.dark .security-grid div svg,
+.tenant-app.dark .panel-heading > svg {
+  color: #8fb4ff;
+}
+
+.tenant-app.dark .report-grid button,
+.tenant-app.dark .receipt-row button,
+.tenant-app.dark .primary-action,
+.tenant-app.dark .lease-document-panel > button {
+  border-color: #3677e6;
+  color: #fff;
+  background: #1556c7;
+}
+.tenant-app.dark .panel-heading button:not(.icon-button) {
+  border-color: #38547f;
+  color: #c6d8ff;
+  background: #20385f;
+}
+.tenant-app.dark .chat-filter > button {
+  border-color: #3a4a64;
+  color: #d7e4ff;
+  background: #1b2b44;
+}
+.tenant-app.dark .chat-filter > button.selected {
+  border-color: #3677e6;
+  color: #fff;
+  background: #1556c7;
+}
+.tenant-app.dark .notice-card {
+  border-color: #38547f;
+  color: #d7e4ff;
+  background: linear-gradient(135deg, #20385f, #192b47);
+}
+.tenant-app.dark .notice-card span {
+  color: #bac7da;
+}
+.tenant-app.dark .notice-folder-heading::after {
+  border-color: #9bbaff;
+}
+.tenant-app.dark .message-bubble small {
+  color: #aab8cc;
 }

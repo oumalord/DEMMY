@@ -661,6 +661,17 @@ function TenantHomeDashboard({ user, units, payments, maintenance, notifications
   const eventMonth = eventDate.toLocaleDateString("en", { month: "short" }).toUpperCase();
   const eventDateLabel = eventDate.toLocaleDateString("en", { weekday: "long", day: "numeric", month: "long" });
   const openTickets = maintenance.filter((ticket) => !/resolved|closed|complete/i.test(ticket.status));
+  const months = Array.from({ length: 6 }, (_, index) => {
+    const date = new Date(now.getFullYear(), now.getMonth() - (5 - index), 1);
+    return { date, label: date.toLocaleDateString("en", { month: "short" }), amount: 0 };
+  });
+  for (const payment of payments) {
+    if (payment.status !== "paid") continue;
+    const paidAt = new Date(payment.paidAt);
+    const month = months.find((item) => item.date.getFullYear() === paidAt.getFullYear() && item.date.getMonth() === paidAt.getMonth());
+    if (month) month.amount += payment.amount;
+  }
+  const recentPayments = [...payments].sort((left, right) => new Date(right.paidAt).getTime() - new Date(left.paidAt).getTime()).slice(0, 4);
 
   function toggleEventReservation() {
     const nextValue = !eventReserved;
@@ -705,10 +716,10 @@ function TenantHomeDashboard({ user, units, payments, maintenance, notifications
         <div className="tenant-overview-grid">
           <article className="tenant-overview-card tenant-payment-card">
             <div className="tenant-card-icon"><CreditCard /></div>
-            <span className="tenant-card-status"><i />{balance > 0 ? "Payment due" : "Up to date"}</span>
+            <span className={`tenant-card-status${!unit ? " is-unlinked" : ""}`}><i />{unit ? balance > 0 ? "Payment due" : "Up to date" : "Unit needed"}</span>
             <span className="tenant-card-eyebrow">Next rent payment</span>
-            <strong className="tenant-card-amount">{formatMoney(balance > 0 ? balance : monthlyRent, currency)}</strong>
-            <div className="tenant-payment-meta"><span>Due {new Date(now.getFullYear(), now.getMonth() + 1, 1).toLocaleDateString("en", { day: "2-digit", month: "long", year: "numeric" })}</span><span>{balance > 0 ? `${Math.ceil((new Date(now.getFullYear(), now.getMonth() + 1, 1).getTime() - now.getTime()) / 86_400_000)} days away` : "Paid this month"}</span></div>
+            <strong className={`tenant-card-amount${!unit ? " is-unlinked" : ""}`}>{unit ? formatMoney(balance > 0 ? balance : monthlyRent, currency) : "Unit not linked"}</strong>
+            <div className="tenant-payment-meta"><span>{unit ? `Due ${new Date(now.getFullYear(), now.getMonth() + 1, 1).toLocaleDateString("en", { day: "2-digit", month: "long", year: "numeric" })}` : "Ask management to connect your unit"}</span><span>{unit ? balance > 0 ? `${Math.ceil((new Date(now.getFullYear(), now.getMonth() + 1, 1).getTime() - now.getTime()) / 86_400_000)} days away` : "Paid this month" : ""}</span></div>
             <div className="tenant-payment-progress" role="progressbar" aria-label="Rent paid this month" aria-valuenow={Math.round(paymentProgress)} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${paymentProgress}%` }} /></div>
             <button className="tenant-card-link" type="button" onClick={() => onNavigate("Payments")}>Make a payment <ArrowRight /></button>
           </article>
@@ -731,6 +742,39 @@ function TenantHomeDashboard({ user, units, payments, maintenance, notifications
             <span className="tenant-message-icon"><MessageSquare /></span>
             <div><span className="tenant-card-eyebrow">Latest message</span><strong>{notifications[0]?.template ?? "Welcome to your new RentFlow workspace"}</strong><p>{typeof notifications[0]?.payload?.body === "string" ? notifications[0].payload.body : "Your management team shared a quick guide to help you get started."}</p></div>
             <button type="button" onClick={() => onNavigate("Messaging")}>Read message <ArrowRight /></button>
+          </article>
+        </div>
+
+        <div className="tenant-activity-grid">
+          <article className="tenant-activity-card tenant-history-card">
+            <div className="tenant-activity-heading"><div><span>Payment history</span><h3>Recorded rent payments</h3></div></div>
+            {payments.some((payment) => payment.status === "paid") ? (
+              <ResponsiveContainer width="100%" height={210}>
+                <AreaChart data={months}>
+                  <defs><linearGradient id="tenant-rent-area" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#2f70e8" stopOpacity={0.3} /><stop offset="95%" stopColor="#2f70e8" stopOpacity={0.02} /></linearGradient></defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e8edf5" />
+                  <XAxis dataKey="label" stroke="#8793a5" />
+                  <YAxis stroke="#8793a5" tickFormatter={(value) => formatMoney(Number(value), currency)} />
+                  <Tooltip formatter={(value) => formatMoney(Number(value), currency)} />
+                  <Area type="monotone" dataKey="amount" stroke="#2464d5" fill="url(#tenant-rent-area)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : <p className="tenant-activity-empty">No completed rent payments have been recorded yet.</p>}
+          </article>
+
+          <article className="tenant-activity-card">
+            <div className="tenant-activity-heading"><div><span>This month</span><h3>Rent summary</h3></div></div>
+            {unit ? <dl className="tenant-rent-breakdown"><div><dt>Monthly rent</dt><dd>{formatMoney(monthlyRent, currency)}</dd></div><div><dt>Paid this month</dt><dd>{formatMoney(paidThisMonth, currency)}</dd></div><div><dt>Remaining balance</dt><dd>{formatMoney(balance, currency)}</dd></div><div><dt>Open maintenance</dt><dd>{openTickets.length}</dd></div></dl> : <p className="tenant-activity-empty">Your management team has not linked a unit to this account.</p>}
+          </article>
+
+          <article className="tenant-activity-card">
+            <div className="tenant-activity-heading"><div><span>Account activity</span><h3>Recent payments</h3></div><button type="button" onClick={() => onNavigate("Payments")}>View all <ArrowRight /></button></div>
+            {recentPayments.length ? recentPayments.map((payment) => <div className="tenant-history-row" key={payment.id}><span><strong>{formatMoney(payment.amount, currency)}</strong><small>{payment.paidAt ? formatDateTime(payment.paidAt) : "Date unavailable"}</small></span><span className={`tenant-payment-state ${payment.status.toLowerCase()}`}>{payment.status}</span></div>) : <p className="tenant-activity-empty">No payment activity has been recorded.</p>}
+          </article>
+
+          <article className="tenant-activity-card">
+            <div className="tenant-activity-heading"><div><span>Maintenance</span><h3>Open requests</h3></div><button type="button" onClick={() => onNavigate("Maintenance")}>View all <ArrowRight /></button></div>
+            {openTickets.length ? openTickets.slice(0, 3).map((ticket) => <div className="tenant-history-row" key={ticket.id}><strong>{ticket.title}</strong><span className="tenant-ticket-state">{ticket.status.replace(/_/g, " ")}</span></div>) : <p className="tenant-activity-empty">No open maintenance requests.</p>}
           </article>
         </div>
       </section>
@@ -3638,6 +3682,7 @@ function AppShell() {
       setAccessToken(result.accessToken);
       setCurrentUser(result.user);
       setRole(mapBackendRole(result.user.role));
+      if (result.user.role === "tenant") setDark(false);
       setActiveTab("Overview");
       if (result.requiresPasswordChange) {
         setScreen("password-change");
@@ -3671,6 +3716,7 @@ function AppShell() {
       setAccessToken(result.accessToken);
       setCurrentUser(result.user);
       setRole("Tenant");
+      setDark(false);
       setActiveTab("Overview");
       setScreen("app");
     } catch (error) {
@@ -4135,12 +4181,11 @@ function AppShell() {
                   <button key={option} className={currency === option ? "selected" : ""} onClick={() => setCurrency(option)}>{option}</button>
                 ))}
               </div>
-              {role === "Tenant" ? (
+              <button className="icon-button" onClick={() => setDark((value) => !value)} aria-label="Toggle theme">{dark ? <Sun /> : <Moon />}</button>
+              {role === "Tenant" && (
                 <button className="tenant-profile-button" type="button" aria-label="Open profile" onClick={() => switchTab("Profile")}>
                   {currentUser?.name.split(/\s+/).map((part) => part[0]).slice(0, 2).join("").toUpperCase() || "JD"}
                 </button>
-              ) : (
-                <button className="icon-button" onClick={() => setDark((value) => !value)} aria-label="Toggle theme">{dark ? <Sun /> : <Moon />}</button>
               )}
               <button className="icon-button" aria-label="Notifications"><Bell /></button>
             </div>
