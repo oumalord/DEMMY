@@ -1,8 +1,11 @@
 import {
   Activity,
+  ArrowRight,
   Bell,
   Building2,
+  CalendarDays,
   CheckCircle2,
+  Clock3,
   CreditCard,
   Download,
   FileText,
@@ -10,6 +13,7 @@ import {
   Home,
   Image as ImageIcon,
   Lock,
+  MapPin,
   Megaphone,
   MessageSquare,
   Moon,
@@ -644,73 +648,92 @@ function TenantHomeDashboard({ user, units, payments, maintenance, notifications
 }) {
   const unit = units[0];
   const now = new Date();
+  const [eventReserved, setEventReserved] = useState(() => window.localStorage.getItem("rentflow-workshop-reserved") === "true");
+  const [remindersEnabled, setRemindersEnabled] = useState(() => window.localStorage.getItem("rentflow-workshop-reminders") !== "false");
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const monthPayments = payments.filter((payment) => payment.status === "paid" && new Date(payment.paidAt).getTime() >= monthStart.getTime());
   const paidThisMonth = monthPayments.reduce((sum, payment) => sum + payment.amount, 0);
   const monthlyRent = unit?.rent ?? 0;
   const balance = Math.max(monthlyRent - paidThisMonth, 0);
+  const paymentProgress = monthlyRent > 0 ? Math.min((paidThisMonth / monthlyRent) * 100, 100) : 0;
+  const eventDate = new Date(now.getFullYear(), now.getMonth(), 24);
+  if (eventDate <= now) eventDate.setMonth(eventDate.getMonth() + 1);
+  const eventMonth = eventDate.toLocaleDateString("en", { month: "short" }).toUpperCase();
+  const eventDateLabel = eventDate.toLocaleDateString("en", { weekday: "long", day: "numeric", month: "long" });
   const openTickets = maintenance.filter((ticket) => !/resolved|closed|complete/i.test(ticket.status));
-  const months = Array.from({ length: 6 }, (_, index) => {
-    const date = new Date(now.getFullYear(), now.getMonth() - (5 - index), 1);
-    return { date, label: date.toLocaleDateString("en", { month: "short" }), amount: 0 };
-  });
-  for (const payment of payments) {
-    if (payment.status !== "paid") continue;
-    const paidAt = new Date(payment.paidAt);
-    const month = months.find((item) => item.date.getFullYear() === paidAt.getFullYear() && item.date.getMonth() === paidAt.getMonth());
-    if (month) month.amount += payment.amount;
+
+  function toggleEventReservation() {
+    const nextValue = !eventReserved;
+    setEventReserved(nextValue);
+    window.localStorage.setItem("rentflow-workshop-reserved", String(nextValue));
   }
-  const recentPayments = [...payments].sort((a, b) => new Date(b.paidAt).getTime() - new Date(a.paidAt).getTime()).slice(0, 4);
+
+  function toggleReminders() {
+    const nextValue = !remindersEnabled;
+    setRemindersEnabled(nextValue);
+    window.localStorage.setItem("rentflow-workshop-reminders", String(nextValue));
+  }
 
   return (
     <section className="tenant-home">
-      <header className="tenant-home-hero">
-        <div>
-          <span className="tenant-eyebrow">RentFlow · Tenant home</span>
-          <h2>Welcome back{user?.name ? `, ${user.name.split(" ")[0]}` : ""}</h2>
-          <p>{unit ? `Unit ${unit.label}` : "No unit is linked to this account yet."}</p>
+      <section className="tenant-event" aria-labelledby="tenant-event-title">
+        <div className="tenant-event-copy">
+          <span className="tenant-eyebrow"><i /> Community event</span>
+          <h2 id="tenant-event-title">Make home feel<br />more like yours.</h2>
+          <p>Join your neighbours for a practical tenant workshop hosted by the RentFlow team.</p>
+          <div className="tenant-event-actions">
+            <button className="tenant-event-primary" type="button" onClick={toggleEventReservation}><CalendarDays />{eventReserved ? "Seat reserved" : "Reserve my seat"}</button>
+            <button className="tenant-event-secondary" type="button" onClick={() => document.getElementById("tenant-event-details")?.scrollIntoView({ behavior: "smooth", block: "center" })}>View details <ArrowRight /></button>
+          </div>
+          {eventReserved && <span className="tenant-reservation-status" role="status">Your seat request is saved on this browser. Contact management to confirm your place.</span>}
         </div>
-        {unit && <div className="tenant-balance-highlight"><span>Current rent balance</span><strong>{formatMoney(balance, currency)}</strong><small>{balance > 0 ? "Based on this month’s recorded payments" : "No outstanding rent balance recorded"}</small></div>}
-        <div className="tenant-home-actions">
-          <button type="button" onClick={() => onNavigate("Payments")}><CreditCard /> View payments</button>
-          <button type="button" onClick={() => onNavigate("Maintenance")}><Wrench /> Report maintenance</button>
+        <div className="tenant-event-date"><strong>{eventDate.getDate()}</strong><span>{eventMonth}</span></div>
+      </section>
+
+      <section className="tenant-event-details" id="tenant-event-details" aria-label="Workshop details">
+        <div><span className="tenant-detail-icon"><CalendarDays /></span><span><small>{eventDateLabel}</small><strong>Tenant essentials workshop</strong></span></div>
+        <div><span className="tenant-detail-icon"><Clock3 /></span><span><small>Time</small><strong>5:30 PM – 7:00 PM</strong></span></div>
+        <div><span className="tenant-detail-icon tenant-location-icon"><MapPin /></span><span><small>Location</small><strong>Community Room, Ground Floor</strong></span></div>
+      </section>
+
+      <section className="tenant-glance" aria-labelledby="tenant-glance-title">
+        <div className="tenant-glance-heading">
+          <div><h2 id="tenant-glance-title">Your home, at a glance</h2><p>{now.toLocaleDateString("en", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}{unit ? ` · Unit ${unit.label}` : ""}{user?.name ? ` · ${user.name}` : ""}</p></div>
+          <button type="button" onClick={() => onNavigate("Payments")}>View all activity <ArrowRight /></button>
         </div>
-      </header>
 
-      <div className="tenant-dashboard-grid">
-        <article className="tenant-dashboard-section tenant-payment-chart">
-          <div className="tenant-section-heading"><div><span>Payment history</span><h3>Recorded rent payments</h3></div></div>
-          {payments.some((payment) => payment.status === "paid") ? (
-            <ResponsiveContainer width="100%" height={220}>
-              <AreaChart data={months}>
-                <defs><linearGradient id="tenant-rent-area" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#69c7ff" stopOpacity={0.5} /><stop offset="95%" stopColor="#69c7ff" stopOpacity={0.02} /></linearGradient></defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(213,228,245,.12)" />
-                <XAxis dataKey="label" stroke="#b8c9db" />
-                <YAxis stroke="#b8c9db" tickFormatter={(value) => formatMoney(Number(value), currency)} />
-                <Tooltip formatter={(value) => formatMoney(Number(value), currency)} />
-                <Area type="monotone" dataKey="amount" stroke="#80d5ff" fill="url(#tenant-rent-area)" />
-              </AreaChart>
-            </ResponsiveContainer>
-          ) : <p className="tenant-empty-state">No completed rent payments have been recorded yet.</p>}
-        </article>
+        <div className="tenant-overview-grid">
+          <article className="tenant-overview-card tenant-payment-card">
+            <div className="tenant-card-icon"><CreditCard /></div>
+            <span className="tenant-card-status"><i />{balance > 0 ? "Payment due" : "Up to date"}</span>
+            <span className="tenant-card-eyebrow">Next rent payment</span>
+            <strong className="tenant-card-amount">{formatMoney(balance > 0 ? balance : monthlyRent, currency)}</strong>
+            <div className="tenant-payment-meta"><span>Due {new Date(now.getFullYear(), now.getMonth() + 1, 1).toLocaleDateString("en", { day: "2-digit", month: "long", year: "numeric" })}</span><span>{balance > 0 ? `${Math.ceil((new Date(now.getFullYear(), now.getMonth() + 1, 1).getTime() - now.getTime()) / 86_400_000)} days away` : "Paid this month"}</span></div>
+            <div className="tenant-payment-progress" role="progressbar" aria-label="Rent paid this month" aria-valuenow={Math.round(paymentProgress)} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${paymentProgress}%` }} /></div>
+            <button className="tenant-card-link" type="button" onClick={() => onNavigate("Payments")}>Make a payment <ArrowRight /></button>
+          </article>
 
-        <article className="tenant-dashboard-section tenant-rent-summary">
-          <div className="tenant-section-heading"><div><span>This month</span><h3>Rent summary</h3></div></div>
-          {unit ? <dl><div><dt>Monthly rent</dt><dd>{formatMoney(monthlyRent, currency)}</dd></div><div><dt>Paid this month</dt><dd>{formatMoney(paidThisMonth, currency)}</dd></div><div><dt>Open maintenance</dt><dd>{openTickets.length}</dd></div></dl> : <p className="tenant-empty-state">Your management team has not linked a unit to this account.</p>}
-        </article>
+          <article className="tenant-overview-card tenant-maintenance-card">
+            <div className="tenant-card-icon tenant-maintenance-icon"><Wrench /></div>
+            <button className="tenant-card-more" type="button" aria-label="View maintenance requests" onClick={() => onNavigate("Maintenance")}><MoreVertical /></button>
+            <span className="tenant-card-eyebrow">Maintenance</span>
+            <strong className="tenant-maintenance-title">{openTickets.length ? `${openTickets.length} open ${openTickets.length === 1 ? "request" : "requests"}` : "No open requests"}</strong>
+            <p>{openTickets[0]?.title ?? "Everything looks good. We’re here if you need us."}</p>
+            <button className="tenant-outline-button" type="button" onClick={() => onNavigate("Maintenance")}>{openTickets.length ? "View requests" : "Report an issue"}</button>
+          </article>
 
-        <article className="tenant-dashboard-section">
-          <div className="tenant-section-heading"><div><span>Maintenance</span><h3>Open requests</h3></div><button type="button" onClick={() => onNavigate("Maintenance")}>View all</button></div>
-          {openTickets.length ? openTickets.slice(0, 3).map((ticket) => <div className="tenant-list-row" key={ticket.id}><strong>{ticket.title}</strong><span>{ticket.status.replace(/_/g, " ")}</span></div>) : <p className="tenant-empty-state">No open maintenance requests.</p>}
-        </article>
+          <article className="tenant-reminder-card">
+            <div><span className="tenant-card-eyebrow">Workshop updates</span><h3>Stay in the loop</h3><p>Get reminders and useful follow-up notes for tenant events.</p></div>
+            <div className="tenant-reminder-control"><span><strong>Reminder preference {remindersEnabled ? "on" : "off"}</strong><small>Preference saved on this browser.</small></span><button type="button" role="switch" aria-checked={remindersEnabled} aria-label="Toggle workshop reminder preference" onClick={toggleReminders}><span><CheckCircle2 /></span></button></div>
+          </article>
 
-        <article className="tenant-dashboard-section">
-          <div className="tenant-section-heading"><div><span>Account activity</span><h3>Recent payments</h3></div><button type="button" onClick={() => onNavigate("Payments")}>View all</button></div>
-          {recentPayments.length ? recentPayments.map((payment) => <div className="tenant-list-row" key={payment.id}><span><strong>{formatMoney(payment.amount, currency)}</strong><small>{payment.paidAt ? formatDateTime(payment.paidAt) : "Date unavailable"}</small></span><span>{payment.status}</span></div>) : <p className="tenant-empty-state">No payment activity has been recorded.</p>}
-        </article>
-
-        {notifications[0] && <article className="tenant-dashboard-section tenant-notice"><div className="tenant-section-heading"><div><span>Latest update</span><h3>{notifications[0].template}</h3></div></div>{typeof notifications[0].payload?.body === "string" && <p>{notifications[0].payload.body}</p>}</article>}
-      </div>
+          <article className="tenant-latest-message">
+            <span className="tenant-message-icon"><MessageSquare /></span>
+            <div><span className="tenant-card-eyebrow">Latest message</span><strong>{notifications[0]?.template ?? "Welcome to your new RentFlow workspace"}</strong><p>{typeof notifications[0]?.payload?.body === "string" ? notifications[0].payload.body : "Your management team shared a quick guide to help you get started."}</p></div>
+            <button type="button" onClick={() => onNavigate("Messaging")}>Read message <ArrowRight /></button>
+          </article>
+        </div>
+      </section>
     </section>
   );
 }
@@ -4075,7 +4098,7 @@ function AppShell() {
   }
 
   return (
-    <main className={dark ? "app dark" : "app"}>
+    <main className={`${dark ? "app dark" : "app"} ${role === "Tenant" ? "tenant-app" : ""}`}>
       <aside className="sidebar">
         <div className="brand"><BrandLogo /><div><strong>RentFlow</strong><span>{role} workspace</span></div></div>
         <nav>
@@ -4112,7 +4135,13 @@ function AppShell() {
                   <button key={option} className={currency === option ? "selected" : ""} onClick={() => setCurrency(option)}>{option}</button>
                 ))}
               </div>
-              <button className="icon-button" onClick={() => setDark((value) => !value)} aria-label="Toggle theme">{dark ? <Sun /> : <Moon />}</button>
+              {role === "Tenant" ? (
+                <button className="tenant-profile-button" type="button" aria-label="Open profile" onClick={() => switchTab("Profile")}>
+                  {currentUser?.name.split(/\s+/).map((part) => part[0]).slice(0, 2).join("").toUpperCase() || "JD"}
+                </button>
+              ) : (
+                <button className="icon-button" onClick={() => setDark((value) => !value)} aria-label="Toggle theme">{dark ? <Sun /> : <Moon />}</button>
+              )}
               <button className="icon-button" aria-label="Notifications"><Bell /></button>
             </div>
           </div>
